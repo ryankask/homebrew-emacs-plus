@@ -6,6 +6,9 @@ class EmacsPlusAT27 < EmacsBase
   mirror "https://ftpmirror.gnu.org/emacs/emacs-27.2.tar.xz"
   sha256 "b4a7cc4e78e63f378624e0919215b910af5bb2a0afc819fad298272e9f40c1b9"
 
+  desc "GNU Emacs text editor"
+  homepage "https://www.gnu.org/software/emacs/"
+
   head do
     url "https://github.com/emacs-mirror/emacs.git", :branch => "emacs-27"
   end
@@ -210,7 +213,7 @@ class EmacsPlusAT27 < EmacsBase
         #{prefix}
 
       To link the application to default Homebrew App location:
-        ln -s #{prefix}/Emacs.app /Applications
+        osascript -e 'tell application "Finder" to make alias file to posix file "#{prefix}/Emacs.app" at POSIX file "/Applications"'
 
       If you wish to install Emacs 26 or Emacs 28, use emacs-plus@26 or
       emacs-plus@28 formula respectively.

@@ -5,6 +5,9 @@ class EmacsPlusAT30 < EmacsBase
   version "30.0.50"
   env :std
 
+  desc "GNU Emacs text editor"
+  homepage "https://www.gnu.org/software/emacs/"
+
   #
   # Options
   #
@@ -74,7 +77,11 @@ class EmacsPlusAT30 < EmacsBase
   # URL
   #
 
-  url "https://github.com/emacs-mirror/emacs.git", :branch => "master"
+  if ENV['HOMEBREW_EMACS_PLUS_30_REVISION']
+    url "https://github.com/emacs-mirror/emacs.git", :revision => ENV['HOMEBREW_EMACS_PLUS_30_REVISION']
+  else
+    url "https://github.com/emacs-mirror/emacs.git", :branch => "master"
+  end
 
   #
   # Icons
@@ -88,7 +95,7 @@ class EmacsPlusAT30 < EmacsBase
 
   opoo "The option --with-no-frame-refocus is not required anymore in emacs-plus@30." if build.with? "no-frame-refocus"
   local_patch "fix-window-role", sha: "1f8423ea7e6e66c9ac6dd8e37b119972daa1264de00172a24a79a710efcb8130"
-  local_patch "system-appearance", sha: "d6ee159839b38b6af539d7b9bdff231263e451c1fd42eec0d125318c9db8cd92"
+  local_patch "system-appearance", sha: "9eb3ce80640025bff96ebaeb5893430116368d6349f4eb0cb4ef8b3d58477db6"
   local_patch "poll", sha: "052eacac5b7bd86b466f9a3d18bff9357f2b97517f463a09e4c51255bdb14648" if build.with? "poll"
   local_patch "round-undecorated-frame", sha: "7451f80f559840e54e6a052e55d1100778abc55f98f1d0c038a24e25773f2874"
   local_patch "ns-win", sha: "766b0414eb6fed9a30841a705837f85d8f127436354d826d47ada8382b85e16f"
@@ -96,7 +103,7 @@ class EmacsPlusAT30 < EmacsBase
   #
   # Initialize
   #
-  def initialize(*args, &block)
+  def initialize(*args, **kwargs, &block)
     a = super
     expand_path
     a
@@ -271,7 +278,7 @@ class EmacsPlusAT30 < EmacsBase
         #{prefix}
 
       To link the application to default Homebrew App location:
-        ln -s #{prefix}/Emacs.app /Applications
+        osascript -e 'tell application "Finder" to make alias file to posix file "#{prefix}/Emacs.app" at POSIX file "/Applications"'
 
       Your PATH value was injected into Emacs.app/Contents/Info.plist
 

@@ -7,6 +7,9 @@ class EmacsPlusAT29 < EmacsBase
   sha256 "d2f881a5cc231e2f5a03e86f4584b0438f83edd7598a09d24a21bd8d003e2e01"
   env :std
 
+  desc "GNU Emacs text editor"
+  homepage "https://www.gnu.org/software/emacs/"
+
   head do
     url "https://github.com/emacs-mirror/emacs.git", :branch => "emacs-29"
   end
@@ -94,7 +97,7 @@ class EmacsPlusAT29 < EmacsBase
   #
   # Initialize
   #
-  def initialize(*args, &block)
+  def initialize(*args, **kwargs, &block)
     a = super
     expand_path
     a
@@ -268,7 +271,7 @@ class EmacsPlusAT29 < EmacsBase
         #{prefix}
 
       To link the application to default Homebrew App location:
-        ln -s #{prefix}/Emacs.app /Applications
+        osascript -e 'tell application "Finder" to make alias file to posix file "#{prefix}/Emacs.app" at POSIX file "/Applications"'
 
       Your PATH value was injected into Emacs.app/Contents/Info.plist
 

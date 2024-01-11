@@ -23,7 +23,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-11]
+        os: [macos-12]
         build_opts:
           - ""
           - "--build-from-source"
@@ -51,7 +51,7 @@ jobs:
 
       - name: Upload logs
         if: ${{ always() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: emacs-plus@26-${{ env.runner_os }}${{ env.build_opts }}.tar.gz
           path: |

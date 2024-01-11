@@ -6,6 +6,9 @@ class EmacsPlusAT26 < EmacsBase
   mirror "https://ftpmirror.gnu.org/emacs/emacs-26.3.tar.xz"
   sha256 "4d90e6751ad8967822c6e092db07466b9d383ef1653feb2f95c93e7de66d3485"
 
+  desc "GNU Emacs text editor"
+  homepage "https://www.gnu.org/software/emacs/"
+
   #
   # Dependencies
   #
@@ -113,7 +116,7 @@ class EmacsPlusAT26 < EmacsBase
         #{prefix}
 
       To link the application to default Homebrew App location:
-        ln -s #{prefix}/Emacs.app /Applications
+        osascript -e 'tell application "Finder" to make alias file to posix file "#{prefix}/Emacs.app" at POSIX file "/Applications"'
     EOS
   end
 
