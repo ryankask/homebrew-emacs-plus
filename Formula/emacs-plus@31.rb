@@ -38,7 +38,7 @@ class EmacsPlusAT31 < EmacsBase
   depends_on "pkg-config" => :build
   depends_on "texinfo" => :build
   depends_on "xz" => :build
-  depends_on "m4" => :build 
+  depends_on "m4" => :build
   depends_on "gnutls"
   depends_on "librsvg"
   depends_on "little-cms2"
@@ -115,7 +115,7 @@ class EmacsPlusAT31 < EmacsBase
     args << "--with-xml2"
     args << "--with-gnutls"
 
-    args << "--with-native-compilation=aot" if build.with? "native-comp"
+    args << "--with-native-compilation" if build.with? "native-comp"
     args << "--without-compress-install" if build.without? "compress-install"
 
     ENV.append "CFLAGS", "-g -Og" if build.with? "debug"
