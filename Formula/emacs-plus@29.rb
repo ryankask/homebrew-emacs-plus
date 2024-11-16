@@ -28,7 +28,6 @@ class EmacsPlusAT29 < EmacsBase
   option "with-no-frame-refocus", "Disables frame re-focus (ie. closing one frame does not refocus another one)"
   option "with-native-comp", "Build with native compilation"
   option "with-compress-install", "Build with compressed install optimization"
-  option "with-poll", "Experimental: use poll() instead of select() to support > 1024 file descriptors`"
 
   #
   # Dependencies
@@ -45,6 +44,7 @@ class EmacsPlusAT29 < EmacsBase
   depends_on "texinfo" => :build
   depends_on "xz" => :build
   depends_on "m4" => :build
+  depends_on "sqlite" => :build
   depends_on "gnutls"
   depends_on "librsvg"
   depends_on "little-cms2"
@@ -91,7 +91,6 @@ class EmacsPlusAT29 < EmacsBase
   local_patch "no-frame-refocus-cocoa", sha: "fb5777dc890aa07349f143ae65c2bcf43edad6febfd564b01a2235c5a15fcabd" if build.with? "no-frame-refocus"
   local_patch "fix-window-role", sha: "1f8423ea7e6e66c9ac6dd8e37b119972daa1264de00172a24a79a710efcb8130"
   local_patch "system-appearance", sha: "d6ee159839b38b6af539d7b9bdff231263e451c1fd42eec0d125318c9db8cd92"
-  local_patch "poll", sha: "052eacac5b7bd86b466f9a3d18bff9357f2b97517f463a09e4c51255bdb14648" if build.with? "poll"
   local_patch "round-undecorated-frame", sha: "7451f80f559840e54e6a052e55d1100778abc55f98f1d0c038a24e25773f2874"
 
   #
@@ -115,6 +114,9 @@ class EmacsPlusAT29 < EmacsBase
 
     ENV.append "CFLAGS", "-g -Og" if build.with? "debug"
     ENV.append "CFLAGS", "-O2 -DFD_SETSIZE=10000 -DDARWIN_UNLIMITED_SELECT"
+
+    ENV.append "CFLAGS", "-I#{Formula["sqlite"].include}"
+    ENV.append "LDFLAGS", "-L#{Formula["sqlite"].opt_lib}"
 
     # Necessary for libgccjit library discovery
     if build.with? "native-comp"
@@ -250,7 +252,6 @@ class EmacsPlusAT29 < EmacsBase
         (man1/"ctags.1").unlink
       end
     end
-    args << "--with-poll" if build.with? "poll"
   end
 
   def post_install
@@ -269,7 +270,7 @@ class EmacsPlusAT29 < EmacsBase
         #{prefix}
 
       To link the application to default Homebrew App location:
-        osascript -e 'tell application "Finder" to make alias file to posix file "#{prefix}/Emacs.app" at POSIX file "/Applications" with properties {name:"Emacs.app"}'
+        osascript -e 'tell application "Finder" to make alias file to posix file "#{prefix}/Emacs.app" at posix file "/Applications" with properties {name:"Emacs.app"}'
 
       Your PATH value was injected into Emacs.app/Contents/Info.plist
 
