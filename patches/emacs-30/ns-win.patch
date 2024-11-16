@@ -1,14 +1,11 @@
 diff --git a/lisp/term/ns-win.el b/lisp/term/ns-win.el
-index 7525b93..9ec3174 100644
+index 2a29457133e..aac48a0d144 100644
 --- a/lisp/term/ns-win.el
 +++ b/lisp/term/ns-win.el
-@@ -95,91 +95,5 @@ The properties returned may include `top', `left', `height', and `width'."
-       (if (match-string 7 geom)
- 	  (list (cons 'width (string-to-number (match-string 7 geom)))))))))
-
--;;;; Keyboard mapping.
--
--;; Here are some Nextstep-like bindings for command key sequences.
+@@ -98,65 +98,7 @@ The properties returned may include `top', `left', `height', and `width'."
+ ;;;; Keyboard mapping.
+ 
+ ;; Here are some Nextstep-like bindings for command key sequences.
 -(define-key global-map [?\s-,] 'customize)
 -(define-key global-map [?\s-'] 'next-window-any-frame)
 -(define-key global-map [?\s-`] 'other-frame)
@@ -64,33 +61,10 @@ index 7525b93..9ec3174 100644
 -(define-key global-map [?\s-0] 'text-scale-adjust)
 -(define-key global-map [?\s-|] 'shell-command-on-region)
 -(define-key global-map [s-kp-bar] 'shell-command-on-region)
--(define-key global-map [?\C-\s- ] 'ns-do-show-character-palette)
+ (define-key global-map [?\C-\s- ] 'ns-do-show-character-palette)
 -(define-key global-map [s-right] 'move-end-of-line)
 -(define-key global-map [s-left] 'move-beginning-of-line)
 -
--(define-key global-map [home] 'beginning-of-buffer)
--(define-key global-map [end] 'end-of-buffer)
--(define-key global-map [kp-home] 'beginning-of-buffer)
--(define-key global-map [kp-end] 'end-of-buffer)
--(define-key global-map [kp-prior] 'scroll-down-command)
--(define-key global-map [kp-next] 'scroll-up-command)
--
--;; Allow shift-clicks to work similarly to under Nextstep.
--(define-key global-map [S-mouse-1] 'mouse-save-then-kill)
--(global-unset-key [S-down-mouse-1])
--
--;; Special Nextstep-generated events are converted to function keys.  Here
--;; are the bindings for them.  Note, these keys are actually declared in
--;; x-setup-function-keys in common-win.
--(define-key global-map [ns-power-off] 'save-buffers-kill-emacs)
--(define-key global-map [ns-open-file] 'ns-find-file)
--(define-key global-map [ns-open-temp-file] [ns-open-file])
--(define-key global-map [ns-open-file-line] 'ns-open-file-select-line)
--(define-key global-map [ns-spi-service-call] 'ns-spi-service-call)
--(define-key global-map [ns-new-frame] 'make-frame)
--(define-key global-map [ns-toggle-toolbar] 'ns-toggle-toolbar)
--(define-key global-map [ns-show-prefs] 'customize)
--
--
- ;; Set up a number of aliases and other layers to pretend we're using
- ;; the Choi/Mitsuharu Carbon port.
+ (define-key global-map [home] 'beginning-of-buffer)
+ (define-key global-map [end] 'end-of-buffer)
+ (define-key global-map [kp-home] 'beginning-of-buffer)
