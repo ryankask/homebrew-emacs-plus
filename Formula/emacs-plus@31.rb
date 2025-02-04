@@ -56,8 +56,10 @@ class EmacsPlusAT31 < EmacsBase
   end
 
   if build.with? "native-comp"
+    # `libgccjit` and `gcc` are required when Emacs compiles `*.elc` files asynchronously (JIT)
     depends_on "libgccjit"
     depends_on "gcc"
+
     depends_on "gmp" => :build
     depends_on "libjpeg" => :build
     depends_on "zlib" => :build
@@ -96,7 +98,7 @@ class EmacsPlusAT31 < EmacsBase
   opoo "The option --with-no-frame-refocus is not required anymore in emacs-plus@31." if build.with? "no-frame-refocus"
   local_patch "fix-window-role", sha: "1f8423ea7e6e66c9ac6dd8e37b119972daa1264de00172a24a79a710efcb8130"
   local_patch "system-appearance", sha: "9eb3ce80640025bff96ebaeb5893430116368d6349f4eb0cb4ef8b3d58477db6"
-  local_patch "round-undecorated-frame", sha: "7451f80f559840e54e6a052e55d1100778abc55f98f1d0c038a24e25773f2874"
+  local_patch "round-undecorated-frame", sha: "14e17d64358eaf2f1d31e49c4743119cdd0698ea0cc19c7a5c0c67d137efd94f"
   local_patch "ns-win", sha: "4829dfa8c447b714e010457f2da6b217be98bf53d454802c253bb6ae9da41038"
 
   #
@@ -175,7 +177,7 @@ class EmacsPlusAT31 < EmacsBase
       system "./configure", *args
 
       # Disable aligned_alloc on Mojave. See issue: https://github.com/daviderestivo/homebrew-emacs-head/issues/15
-      if MacOS.version <= :mojave
+      if OS.mac? && MacOS.version <= :mojave
         ohai "Force disabling of aligned_alloc on macOS <= Mojave"
         configure_h_filtered = File.read("src/config.h")
                                    .gsub("#define HAVE_ALIGNED_ALLOC 1", "#undef HAVE_ALIGNED_ALLOC")
@@ -233,7 +235,7 @@ class EmacsPlusAT31 < EmacsBase
       system "./configure", *args
 
       # Disable aligned_alloc on Mojave. See issue: https://github.com/daviderestivo/homebrew-emacs-head/issues/15
-      if MacOS.version <= :mojave
+      if OS.mac? && MacOS.version <= :mojave
         ohai "Force disabling of aligned_alloc on macOS <= Mojave"
         configure_h_filtered = File.read("src/config.h")
                                    .gsub("#define HAVE_ALIGNED_ALLOC 1", "#undef HAVE_ALIGNED_ALLOC")

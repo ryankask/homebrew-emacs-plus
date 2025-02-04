@@ -61,8 +61,10 @@ class EmacsPlusAT29 < EmacsBase
   end
 
   if build.with? "native-comp"
-    depends_on "libgccjit" => :recommended
-    depends_on "gcc" => :build
+    # `libgccjit` and `gcc` are required when Emacs compiles `*.elc` files asynchronously (JIT)
+    depends_on "libgccjit"
+    depends_on "gcc"
+
     depends_on "gmp" => :build
     depends_on "libjpeg" => :build
     depends_on "zlib" => :build
@@ -168,7 +170,7 @@ class EmacsPlusAT29 < EmacsBase
       system "./configure", *args
 
       # Disable aligned_alloc on Mojave. See issue: https://github.com/daviderestivo/homebrew-emacs-head/issues/15
-      if MacOS.version <= :mojave
+      if OS.mac? && MacOS.version <= :mojave
         ohai "Force disabling of aligned_alloc on macOS <= Mojave"
         configure_h_filtered = File.read("src/config.h")
                                    .gsub("#define HAVE_ALIGNED_ALLOC 1", "#undef HAVE_ALIGNED_ALLOC")
@@ -226,7 +228,7 @@ class EmacsPlusAT29 < EmacsBase
       system "./configure", *args
 
       # Disable aligned_alloc on Mojave. See issue: https://github.com/daviderestivo/homebrew-emacs-head/issues/15
-      if MacOS.version <= :mojave
+      if OS.mac? && MacOS.version <= :mojave
         ohai "Force disabling of aligned_alloc on macOS <= Mojave"
         configure_h_filtered = File.read("src/config.h")
                                    .gsub("#define HAVE_ALIGNED_ALLOC 1", "#undef HAVE_ALIGNED_ALLOC")

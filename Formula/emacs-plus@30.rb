@@ -2,9 +2,9 @@ require_relative "../Library/EmacsBase"
 
 class EmacsPlusAT30 < EmacsBase
   init 30
-  url "https://alpha.gnu.org/gnu/emacs/pretest/emacs-30.0.92.tar.xz"
-  mirror "https://ftpmirror.gnu.org/emacs/emacs-30.0.92.tar.xz"
-  sha256 "d89287bd5a8381bb60e14aab95202377261d43a60d15dc0a61d0d662bc5626be"
+  url "https://alpha.gnu.org/gnu/emacs/pretest/emacs-30.0.93.tar.xz"
+  mirror "https://ftpmirror.gnu.org/emacs/emacs-30.0.93.tar.xz"
+  sha256 "4e50387505e1e05e83a39672e756ae1b76a24a8c981e7f981aec6e966cd6ff7f"
 
   desc "GNU Emacs text editor"
   homepage "https://www.gnu.org/software/emacs/"
@@ -66,8 +66,10 @@ class EmacsPlusAT30 < EmacsBase
   end
 
   if build.with? "native-comp"
+    # `libgccjit` and `gcc` are required when Emacs compiles `*.elc` files asynchronously (JIT)
     depends_on "libgccjit"
     depends_on "gcc"
+
     depends_on "gmp" => :build
     depends_on "libjpeg" => :build
     depends_on "zlib" => :build
@@ -183,7 +185,7 @@ class EmacsPlusAT30 < EmacsBase
       system "./configure", *args
 
       # Disable aligned_alloc on Mojave. See issue: https://github.com/daviderestivo/homebrew-emacs-head/issues/15
-      if MacOS.version <= :mojave
+      if OS.mac? && MacOS.version <= :mojave
         ohai "Force disabling of aligned_alloc on macOS <= Mojave"
         configure_h_filtered = File.read("src/config.h")
                                    .gsub("#define HAVE_ALIGNED_ALLOC 1", "#undef HAVE_ALIGNED_ALLOC")
@@ -241,7 +243,7 @@ class EmacsPlusAT30 < EmacsBase
       system "./configure", *args
 
       # Disable aligned_alloc on Mojave. See issue: https://github.com/daviderestivo/homebrew-emacs-head/issues/15
-      if MacOS.version <= :mojave
+      if OS.mac? && MacOS.version <= :mojave
         ohai "Force disabling of aligned_alloc on macOS <= Mojave"
         configure_h_filtered = File.read("src/config.h")
                                    .gsub("#define HAVE_ALIGNED_ALLOC 1", "#undef HAVE_ALIGNED_ALLOC")
