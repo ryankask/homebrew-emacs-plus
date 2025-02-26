@@ -115,7 +115,7 @@ class EmacsPlusAT30 < EmacsBase
       --enable-locallisppath=#{HOMEBREW_PREFIX}/share/emacs/site-lisp
       --infodir=#{info}/emacs
       --prefix=#{prefix}
-      --with-native-compilation=aot
+      --with-native-compilation
     ]
 
     args << "--with-xml2"
