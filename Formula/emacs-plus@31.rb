@@ -99,6 +99,11 @@ class EmacsPlusAT31 < EmacsBase
   #
 
   def install
+    # Check for deprecated --with-*-icon options and auto-migrate
+    check_deprecated_icon_option
+    # Validate build.yml configuration early to fail fast
+    validate_custom_config
+
     args = %W[
       --disable-dependency-tracking
       --disable-silent-rules
@@ -161,6 +166,9 @@ class EmacsPlusAT31 < EmacsBase
 
     system "./autogen.sh"
 
+    # Apply custom patches from build.yml
+    apply_custom_patches
+
     if (build.with? "cocoa") && (build.without? "x11")
       args << "--with-ns" << "--disable-ns-self-contained"
 
@@ -191,6 +199,11 @@ class EmacsPlusAT31 < EmacsBase
         resource("#{icon}-icon").stage do
           icons_dir.install Dir["*.icns*"].first => "Emacs.icns"
         end
+      end
+
+      # Apply custom icon from build.yml (if no deprecated --with-*-icon option used)
+      unless ICONS_CONFIG.keys.any? { |icon| build.with? "#{icon}-icon" }
+        apply_custom_icon(icons_dir)
       end
 
       # Create Emacs Client.app (AppleScript-based to handle file opening from Finder)
@@ -261,6 +274,9 @@ class EmacsPlusAT31 < EmacsBase
       To link the application to default Homebrew App location:
         osascript -e 'tell application "Finder" to make alias file to posix file "#{prefix}/Emacs.app" at posix file "/Applications" with properties {name:"Emacs.app"}'
         osascript -e 'tell application "Finder" to make alias file to posix file "#{prefix}/Emacs Client.app" at posix file "/Applications" with properties {name:"Emacs Client.app"}'
+
+      Custom icons and patches can be configured via ~/.config/emacs-plus/build.yml
+      See: https://github.com/d12frosted/homebrew-emacs-plus/blob/master/community/README.md
 
       Your PATH value was injected into Emacs.app via a wrapper script.
       This solves the issue with macOS Sequoia ignoring LSEnvironment in Info.plist.
