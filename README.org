@@ -4,14 +4,14 @@
 </p>
 <h1 align="center">Emacs Plus</h1>
 <p align="center">
-  <a href="https://github.com/d12frosted/homebrew-emacs-plus/actions/workflows/emacs-31.yml">
-    <img src="https://github.com/d12frosted/homebrew-emacs-plus/actions/workflows/emacs-31.yml/badge.svg" alt="Emacs 31 CI Status Badge">
+  <a href="https://github.com/d12frosted/homebrew-emacs-plus/actions/workflows/build.yml">
+    <img src="https://github.com/d12frosted/homebrew-emacs-plus/actions/workflows/build.yml/badge.svg" alt="Build Status">
   </a>
-  <a href="https://github.com/d12frosted/homebrew-emacs-plus/actions/workflows/emacs-30.yml">
-    <img src="https://github.com/d12frosted/homebrew-emacs-plus/actions/workflows/emacs-30.yml/badge.svg" alt="Emacs 30 CI Status Badge">
+  <a href="https://github.com/d12frosted/homebrew-emacs-plus/actions/workflows/nightly.yml">
+    <img src="https://github.com/d12frosted/homebrew-emacs-plus/actions/workflows/nightly.yml/badge.svg" alt="Nightly Status">
   </a>
-  <a href="https://github.com/d12frosted/homebrew-emacs-plus/actions/workflows/emacs-29.yml">
-    <img src="https://github.com/d12frosted/homebrew-emacs-plus/actions/workflows/emacs-29.yml/badge.svg" alt="Emacs 29 CI Status Badge">
+  <a href="https://github.com/d12frosted/homebrew-emacs-plus/actions/workflows/build-app.yml">
+    <img src="https://github.com/d12frosted/homebrew-emacs-plus/actions/workflows/build-app.yml/badge.svg" alt="Cask Build Status">
   </a>
 </p>
 #+end_html
@@ -34,9 +34,12 @@ Emacs+ is [[https://www.gnu.org/software/emacs/emacs.html][→ GNU Emacs]] formu
 
 Feel free to open an issue or contact me via email if you face any issues, questions or feature requests. I love pull requests, so do send them. You might want to check [[docs/development-guidelines.org][→ Development guidelines]] to have better understanding on how to contribute.
 
+For recent changes, see [[./NEWS.org][→ News]].
+
 ** Table of Contents :TOC_3:
   - [[#about][About]]
   - [[#install][Install]]
+    - [[#pre-built-binaries-cask][Pre-built binaries (Cask)]]
     - [[#installing-from-feature-branch][Installing from feature branch]]
   - [[#reinstall][Reinstall]]
   - [[#emacs-31][Emacs 31]]
@@ -68,8 +71,7 @@ Feel free to open an issue or contact me via email if you face any issues, quest
     - [[#emacs-27][Emacs 27]]
     - [[#emacs-26][Emacs 26]]
   - [[#faq][FAQ]]
-    - [[#how-to-changepin-commit-emacs-plus30-is-built-from][How to change/pin commit =emacs-plus@30= is built from]]
-    - [[#how-to-changepin-commit-emacs-plus31-is-built-from][How to change/pin commit =emacs-plus@31= is built from]]
+    - [[#how-to-pin-a-specific-commit][How to pin a specific commit]]
   - [[#screenshots][Screenshots]]
   - [[#acknowledgements][Acknowledgements]]
 
@@ -91,6 +93,34 @@ Emacs Plus contains separate formulas for different Emacs versions:
 #+end_src
 
 By default (without any addition options) this formula install Cocoa version of Emacs with support of =gnutls=, =librsvg=, =libxml2=, dynamic modules and multicolor fonts. Note that =imagemagick= is not included by default (opt-in for all versions), =webp= is included by default in =emacs-plus@30= and =emacs-plus@31= only, and =tree-sitter= is included by default in =emacs-plus@29=, =emacs-plus@30=, and =emacs-plus@31=. Please see the list of available options to disable any bit of default behaviour or add even more stuff.
+
+*** Pre-built binaries (Cask)
+
+For faster installation without compilation, pre-built binaries are available as Homebrew casks:
+
+#+begin_src bash
+  $ brew tap d12frosted/emacs-plus
+  $ brew install --cask emacs-plus@30   # Stable (Emacs 30)
+  $ brew install --cask emacs-plus@31   # Development (Emacs 31)
+#+end_src
+
+Cask builds are self-contained applications with all dependencies bundled. They include:
+
+- Native compilation (AOT)
+- =xwidgets=, =tree-sitter=, =imagemagick=, =mailutils=
+- =Emacs.app= and =Emacs Client.app=
+- Default Emacs icon
+
+*Cask vs Formula:*
+
+| Feature              | Cask (=--cask=)          | Formula                   |
+|----------------------+--------------------------+---------------------------|
+| Install time         | ~1 minute (download)     | ~30 minutes (compile)     |
+| Custom build options | No                       | Yes (icons, patches, etc) |
+| macOS versions       | 14+ (Sonoma, Sequoia, Tahoe) | Any supported         |
+| Architectures        | ARM64 and Intel          | Any                       |
+
+Use the *formula* if you need custom icons, patches, or specific build options. Use the *cask* for quick installation with sensible defaults.
 
 *** Installing from feature branch
 
@@ -129,7 +159,7 @@ In short, =brew= doesn't really support options. They break time to time ([[http
 By default =emacs-plus@31= uses the following features.
 
 - Injected =PATH= value from user shell (see separate section explaining this feature).
-- Cocoa version, e.g. builds =Emacs.app= and =Emacs Client.app= (see [[#emacs-client-app][→ Emacs Client.app]] for details).
+- Cocoa version, e.g. builds =Emacs.app= and =Emacs Client.app= (see [[#emacs-clientapp][→ Emacs Client.app]] for details).
 - Unconditional support for =gnutls=, =librsvg=, =webp=, =libxml2=, =little-cms2=, =tree-sitter= and dynamic modules.
 - Build with native compilation.
 
@@ -143,9 +173,11 @@ By default =emacs-plus@31= uses the following features.
 | =--with-imagemagick=      | build with =imagemagick= support                                               |
 | =--with-mailutils=        | build with mailutils support                                                 |
 | =--with-no-frame-refocus= | disables frame re-focus (ie. closing one frame does not refocus another one) |
-| =--with-x11=              | build with x11 support                                                       |
+| =--with-x11=              | build with x11 support (disables Cocoa, no =Emacs.app= bundle)               |
 | =--with-xwidgets=         | build [[#xwidgets-webkit][→ with xwidgets]] support                                                |
-| =--without-cocoa=         | build a non-Cocoa version of Emacs (terminal only)                           |
+| =--without-cocoa=         | build a non-Cocoa version of Emacs (terminal only, no =Emacs.app= bundle)    |
+
+*Note:* Options =--with-x11= and =--without-cocoa= produce terminal/X11 builds that do not include =Emacs.app=. Icon options are ignored for these builds.
 
 *** No title bar
 Please note, that ~--with-no-titlebar~ is no longer needed in Emacs 30+, since the same can be achieved natively using [[https://github.com/d12frosted/homebrew-emacs-plus#emacs-29-1][this method]].
@@ -157,7 +189,7 @@ Please note, that ~--with-no-titlebar~ is no longer needed in Emacs 30+, since t
 By default =emacs-plus@30= uses the following features.
 
 - Injected =PATH= value from user shell (see separate section explaining this feature).
-- Cocoa version, e.g. builds =Emacs.app= and =Emacs Client.app= (see [[#emacs-client-app][→ Emacs Client.app]] for details).
+- Cocoa version, e.g. builds =Emacs.app= and =Emacs Client.app= (see [[#emacs-clientapp][→ Emacs Client.app]] for details).
 - Unconditional support for =gnutls=, =librsvg=, =webp=, =libxml2=, =little-cms2=, =tree-sitter= and dynamic modules.
 - Build with native compilation.
 
@@ -172,9 +204,11 @@ By default =emacs-plus@30= uses the following features.
 | =--with-imagemagick=      | build with =imagemagick= support                                               |
 | =--with-mailutils=        | build with mailutils support                                                 |
 | =--with-no-frame-refocus= | disables frame re-focus (ie. closing one frame does not refocus another one) |
-| =--with-x11=              | build with x11 support                                                       |
+| =--with-x11=              | build with x11 support (disables Cocoa, no =Emacs.app= bundle)               |
 | =--with-xwidgets=         | build [[#xwidgets-webkit][→ with xwidgets]] support                                                |
-| =--without-cocoa=         | build a non-Cocoa version of Emacs (terminal only)                           |
+| =--without-cocoa=         | build a non-Cocoa version of Emacs (terminal only, no =Emacs.app= bundle)    |
+
+*Note:* Options =--with-x11= and =--without-cocoa= produce terminal/X11 builds that do not include =Emacs.app=. Icon options are ignored for these builds.
 
 *** No title bar
 Please note, that ~--with-no-titlebar~ is no longer needed in Emacs 30, since the same can be achieved natively using [[https://github.com/d12frosted/homebrew-emacs-plus#emacs-29-1][this method]].
@@ -201,9 +235,11 @@ By default =emacs-plus@29= uses the following features.
 | =--with-mailutils=        | build with mailutils support                                                 |
 | =--with-native-comp=      | build with native compilation aka [[#gccemacs][→ gccemacs]]                                 |
 | =--with-no-frame-refocus= | disables frame re-focus (ie. closing one frame does not refocus another one) |
-| =--with-x11=              | build with x11 support                                                       |
+| =--with-x11=              | build with x11 support (disables Cocoa, no =Emacs.app= bundle)               |
 | =--with-xwidgets=         | build [[#xwidgets-webkit][→ with xwidgets]] support                                                |
-| =--without-cocoa=         | build a non-Cocoa version of Emacs (terminal only)                           |
+| =--without-cocoa=         | build a non-Cocoa version of Emacs (terminal only, no =Emacs.app= bundle)    |
+
+*Note:* Options =--with-x11= and =--without-cocoa= produce terminal/X11 builds that do not include =Emacs.app=. Icon options are ignored for these builds.
 
 *** No title bar
 Please note, that ~--with-no-titlebar~ is no longer needed in Emacs 29, since the same can be achieved natively using [[https://github.com/d12frosted/homebrew-emacs-plus#emacs-29-1][this method]].
@@ -228,6 +264,24 @@ In case you have a non-trivial setup relying on specific value of =PATH= inherit
 
 And if for some reason PATH injection doesn't work for you, report it either in [[https://github.com/d12frosted/homebrew-emacs-plus/issues/469][#469]] or open a new issue.
 
+*** Detecting Emacs Plus
+
+Starting with =emacs-plus@30= and =emacs-plus@31=, the variable =ns-emacs-plus-version= is defined, allowing you to detect Emacs Plus in your init.el:
+
+#+begin_src elisp
+(when (bound-and-true-p ns-emacs-plus-version)
+  ;; Emacs Plus specific configuration
+  )
+
+;; Or check specific version
+(when (and (bound-and-true-p ns-emacs-plus-version)
+           (>= ns-emacs-plus-version 31))
+  ;; Emacs Plus 31+ specific
+  )
+#+end_src
+
+This is useful for conditionally enabling features that are specific to Emacs Plus, such as the =ns-system-appearance-change-functions= hook.
+
 *** Emacs Client.app
 
 Starting with =emacs-plus@30= and =emacs-plus@31=, the formula includes a companion application called =Emacs Client.app=. This application provides a user-friendly way to open files in Emacs from Finder, Spotlight, and other macOS applications.
@@ -246,6 +300,7 @@ Starting with =emacs-plus@30= and =emacs-plus@31=, the formula includes a compan
 - *Fast startup* - No need to launch a full Emacs instance for each file
 - *Shared session* - All files opened via Emacs Client appear in the same Emacs session
 - *Seamless integration* - Works with "Open With" in Finder, drag-and-drop, and can be set as the default application for text files
+- *org-protocol support* - Handles =org-protocol://= URLs for org-capture, org-roam, and other integrations
 
 **** Usage
 
@@ -265,6 +320,7 @@ You can then:
 - Drag files onto the Emacs Client.app icon
 - Set Emacs Client as the default application for specific file types
 - Launch from Spotlight to create a new Emacs frame
+- Use =org-protocol://= URLs from browser extensions (requires =(require 'org-protocol)= in your init file)
 
 The implementation uses AppleScript to properly handle macOS AppleEvents, ensuring files opened from Finder are correctly passed to =emacsclient=. PATH injection works the same as in =Emacs.app= (see [[#injected-path][→ Injected PATH]]).
 
@@ -361,6 +417,11 @@ icon: modern-purple-flat
 #   url: https://example.com/my-icon.icns
 #   sha256: abc123...
 
+# Pin to a specific git revision (version-specific)
+# revision:
+#   "30": abc123def456
+#   "31": 789abcdef123
+
 # Apply community patches
 # patches:
 #   - patch-name-from-registry
@@ -376,70 +437,17 @@ For more information, see [[./community/README.md][→ Community Documentation]]
 
 ** Icons
 
-#+begin_quote
-*Deprecation Notice*: The =--with-*-icon= options are deprecated and will be removed on 2026-03-14. Please migrate to using =~/.config/emacs-plus/build.yml= with =icon: icon-name=. See [[#community-features][→ Community Features]] section above.
-#+end_quote
+Emacs+ supports 76 custom icons. To use one, add it to your =~/.config/emacs-plus/build.yml=:
 
-| Option                                        | Author                     | Image                                                    | URL     |
-|-----------------------------------------------+----------------------------+----------------------------------------------------------+---------|
-| =--with-EmacsIcon1-icon=                        | [[https://github.com/jasonm23][→ Jason Milkins]]            | [[/icons/preview/EmacsIcon1_128.png]]                        | [[https://github.com/emacsfodder/emacs-icons-project][→ Link]]  |
-| =--with-EmacsIcon2-icon=                        | [[https://github.com/jasonm23][→ Jason Milkins]]            | [[/icons/preview/EmacsIcon2_128.png]]                        | [[https://github.com/emacsfodder/emacs-icons-project][→ Link]]  |
-| =--with-EmacsIcon3-icon=                        | [[https://github.com/jasonm23][→ Jason Milkins]]            | [[/icons/preview/EmacsIcon3_128.png]]                        | [[https://github.com/emacsfodder/emacs-icons-project][→ Link]]  |
-| =--with-EmacsIcon4-icon=                        | [[https://github.com/jasonm23][→ Jason Milkins]]            | [[/icons/preview/EmacsIcon4_128.png]]                        | [[https://github.com/emacsfodder/emacs-icons-project][→ Link]]  |
-| =--with-EmacsIcon5-icon=                        | [[https://github.com/jasonm23][→ Jason Milkins]]            | [[/icons/preview/EmacsIcon5_128.png]]                        | [[https://github.com/emacsfodder/emacs-icons-project][→ Link]]  |
-| =--with-EmacsIcon6-icon=                        | [[https://github.com/jasonm23][→ Jason Milkins]]            | [[/icons/preview/EmacsIcon6_128.png]]                        | [[https://github.com/emacsfodder/emacs-icons-project][→ Link]]  |
-| =--with-EmacsIcon7-icon=                        | [[https://github.com/jasonm23][→ Jason Milkins]]            | [[/icons/preview/EmacsIcon7_128.png]]                        | [[https://github.com/emacsfodder/emacs-icons-project][→ Link]]  |
-| =--with-EmacsIcon8-icon=                        | [[https://github.com/jasonm23][→ Jason Milkins]]            | [[/icons/preview/EmacsIcon8_128.png]]                        | [[https://github.com/emacsfodder/emacs-icons-project][→ Link]]  |
-| =--with-EmacsIcon9-icon=                        | [[https://github.com/jasonm23][→ Jason Milkins]]            | [[/icons/preview/EmacsIcon9_128.png]]                        | [[https://github.com/emacsfodder/emacs-icons-project][→ Link]]  |
-| =--with-c9rgreen-sonoma-icon=                   | [[https://github.com/c9rgreen][→ Christopher Green]]        | [[/icons/preview/c9rgreen-sonoma_128.png]]                       | [[https://github.com/c9rgreen/emacs-macos-icon][→ Link]] |
-| =--with-cacodemon-icon=                         | [[https://gitlab.com/wildwestrom][→ Christian Westrom]]        | [[/icons/preview/cacodemon_128.png]]                         | [[https://gitlab.com/wildwestrom/emacs-doom-icon][→ Link]]  |
-| =--with-dragon-icon=                            | [[https://github.com/willbchang][→ Will B Chang]]             | [[/icons/preview/dragon_128.png]]                            | [[https://github.com/willbchang/emacs-dragon-icon][→ Link]]  |
-| =--with-elrumo1-icon=                           | [[https://github.com/elrumo][→ Elias]]                    | [[/icons/preview/elrumo1_128.png]]                           | [[https://github.com/d12frosted/homebrew-emacs-plus/issues/303#issuecomment-763928162][→ Link]]  |
-| =--with-elrumo2-icon=                           | [[https://github.com/elrumo][→ Elias]]                    | [[/icons/preview/elrumo2_128.png]]                           | [[https://github.com/d12frosted/homebrew-emacs-plus/issues/303#issuecomment-763928162][→ Link]]  |
-| =--with-emacs-card-blue-deep-icon=              | [[https://github.com/jasonm23][→ Jason Milkins]]            | [[/icons/preview/emacs-card-blue-deep_128.png]]              | [[https://github.com/emacsfodder/emacs-icons-project][→ Link]]  |
-| =--with-emacs-card-british-racing-green-icon=   | [[https://github.com/jasonm23][→ Jason Milkins]]            | [[/icons/preview/emacs-card-british-racing-green_128.png]]   | [[https://github.com/emacsfodder/emacs-icons-project][→ Link]]  |
-| =--with-emacs-card-carmine-icon=                | [[https://github.com/jasonm23][→ Jason Milkins]]            | [[/icons/preview/emacs-card-carmine_128.png]]                | [[https://github.com/emacsfodder/emacs-icons-project][→ Link]]  |
-| =--with-emacs-card-green-icon=                  | [[https://github.com/jasonm23][→ Jason Milkins]]            | [[/icons/preview/emacs-card-green_128.png]]                  | [[https://github.com/emacsfodder/emacs-icons-project][→ Link]]  |
-| =--with-gnu-head-icon=                          | [[https://github.com/aurium][→ Aurélio A. Heckert]]       | [[/icons/preview/gnu-head_128.png]]                          | [[https://www.gnu.org/graphics/heckert_gnu.html][→ Link]]  |
-| =--with-memeplex-slim-icon=                     | [[https://github.com/memeplex][→ memeplex]]                 | [[/icons/preview/memeplex-slim_128.png]]                     | [[https://github.com/d12frosted/homebrew-emacs-plus/issues/419#issuecomment-966735773][→ Link]]  |
-| =--with-memeplex-wide-icon=                     | [[https://github.com/memeplex][→ memeplex]]                 | [[/icons/preview/memeplex-wide_128.png]]                     | [[https://github.com/d12frosted/homebrew-emacs-plus/issues/419#issuecomment-966735773][→ Link]]  |
-| =--with-modern-alecive-flatwoken-icon=          | [[https://www.iconarchive.com/artist/alecive.html][→ Alessandro Roncone]]       | [[/icons/preview/modern-alecive-flatwoken_128.png]]          | [[https://www.iconarchive.com/show/flatwoken-icons-by-alecive.html][→ Link]]  |
-| =--with-modern-asingh4242-icon=                 | [[https://imgur.com/user/asingh4242][→ Asingh4242]]               | [[/icons/preview/modern-asingh4242_128.png]]                 | [[https://imgur.com/YGxjLZw][→ Link]]  |
-| =--with-modern-azhilin-icon=                    | Andrew Zhilin              | [[/icons/preview/modern-azhilin_128.png]]                    | [[https://commons.wikimedia.org/wiki/File:Emacs-icon-48x48.png][→ Link]]  |
-| =--with-modern-bananxan-icon=                   | [[https://www.deviantart.com/bananxan][→ BananXan]]                 | [[/icons/preview/modern-bananxan_128.png]]                   | [[https://www.deviantart.com/bananxan/art/Emacs-icon-207744728][→ Link]]  |
-| =--with-modern-black-dragon-icon=               | [[https://www.cleanpng.com/users/@osike.html][→ Osike]]                    | [[/icons/preview/modern-black-dragon_128.png]]               | [[https://www.cleanpng.com/png-spacemacs-computer-software-command-line-interface-3947037][→ Link]]  |
-| =--with-modern-black-gnu-head-icon=             | [[http://www.aha-soft.com][→ Aha-Soft]]                 | [[/icons/preview/modern-black-gnu-head_128.png]]             | [[https://www.iconfinder.com/iconsets/flat-round-system][→ Link]]  |
-| =--with-modern-black-variant-icon=              | [[https://www.deviantart.com/blackvariant/about][→ BlackVariant]]             | [[/icons/preview/modern-black-variant_128.png]]              | [[https://www.deviantart.com/blackvariant][→ Link]]  |
-| =--with-modern-bokehlicia-captiva-icon=         | [[https://www.deviantart.com/bokehlicia][→ Bokehlicia]]               | [[/icons/preview/modern-bokehlicia-captiva_128.png]]         | [[https://www.iconarchive.com/show/captiva-icons-by-bokehlicia/emacs-icon.html][→ Link]]  |
-| =--with-modern-cg433n-icon=                     | [[https://github.com/cg433n][→ cg433n]]                   | [[/icons/preview/modern-cg433n_128.png]]                     | [[https://github.com/cg433n/emacs-mac-icon][→ Link]]  |
-| =--with-modern-doom-icon=                       | [[http://eccentric-j.com/][→ Eccentric J]]              | [[/icons/preview/modern-doom_128.png]]                       | [[https://github.com/eccentric-j/doom-icon][→ Link]]  |
-| =--with-modern-doom3-icon=                      | [[http://eccentric-j.com/][→ Eccentric J]]              | [[/icons/preview/modern-doom3_128.png]]                      | [[https://github.com/eccentric-j/doom-icon][→ Link]]  |
-| =--with-modern-icon=                            | Unknown                    | [[/icons/preview/modern_128.png]]                            | Unknown |
-| =--with-modern-mzaplotnik-icon=                 | [[https://commons.wikimedia.org/wiki/User:MZaplotnik][→ Matjaz Zaplotnik]]         | [[/icons/preview/modern-mzaplotnik_128.png]]                 | [[https://commons.wikimedia.org/wiki/File:Emacs-icon-48x48.svg][→ Link]]  |
-| =--with-modern-nuvola-icon=                     | [[https://en.wikipedia.org/wiki/David_Vignoni][→ David Vignoni]]            | [[/icons/preview/modern-nuvola_128.png]]                     | [[https://commons.wikimedia.org/wiki/File:Nuvola_apps_emacs_vector.svg][→ Link]]  |
-| =--with-modern-orange-icon=                     | [[https://github.com/VentGrey][→ Omar Jair Purata Funes]]   | [[/icons/preview/modern-orange_128.png]]                     | [[https://github.com/PapirusDevelopmentTeam/papirus-icon-theme/issues/1742][→ Link]]  |
-| =--with-modern-paper-icon=                      | [[https://github.com/snwh][→ Sam Hewitt]]               | [[/icons/preview/modern-paper_128.png]]                      | [[https://github.com/snwh/paper-icon-theme/blob/master/Paper/512x512/apps/emacs.png][→ Link]]  |
-| =--with-modern-papirus-icon=                    | [[https://github.com/PapirusDevelopmentTeam][→ Papirus Development Team]] | [[/icons/preview/modern-papirus_128.png]]                    | [[https://github.com/PapirusDevelopmentTeam/papirus-icon-theme][→ Link]]  |
-| =--with-modern-pen-3d-icon=                     | Unknown                    | [[/icons/preview/modern-pen-3d_128.png]]                     | [[https://download-mirror.savannah.gnu.org/releases/emacs/icons][→ Link]]  |
-| =--with-modern-pen-black-icon=                  | [[https://gitlab.com/csantosb][→ Cayetano Santos]]          | [[/icons/preview/modern-pen-black_128.png]]                  | [[https://gitlab.com/uploads/-/system/project/avatar/11430322/emacs_icon_132408.png][→ Link]]  |
-| =--with-modern-pen-icon=                        | [[https://github.com/nanasess][→ Kentaro Ohkouchi]]         | [[/icons/preview/modern-pen_128.png]]                        | [[https://github.com/nanasess/EmacsIconCollections][→ Link]]  |
-| =--with-modern-pen-lds56-icon=                  | [[http://lds56.github.io/about][→ lds56]]                    | [[/icons/preview/modern-pen-lds56_128.png]]                  | [[http://lds56.github.io/notes/emacs-icon-redesigned][→ Link]]  |
-| =--with-modern-purple-flat-icon=                | [[https://jeremiahfoster.com][→ Jeremiah Foster]]          | [[/icons/preview/modern-purple-flat_128.png]]                | [[https://icon-icons.com/icon/emacs/103962][→ Link]]  |
-| =--with-modern-sexy-v1-icon=                    | [[https://emacs.sexy][→ Emacs is Sexy]]            | [[/icons/preview/modern-sexy-v1_128.png]]                    | [[https://emacs.sexy][→ Link]]  |
-| =--with-modern-sexy-v2-icon=                    | [[https://emacs.sexy][→ Emacs is Sexy]]            | [[/icons/preview/modern-sexy-v2_128.png]]                    | [[https://emacs.sexy][→ Link]]  |
-| =--with-modern-sjrmanning-icon=                 | [[https://github.com/sjrmanning][→ sjrmannings]]              | [[/icons/preview/modern-sjrmanning_128.png]]                 | [[https://github.com/sjrmanning/emacs-icon][→ Link]]  |
-| =--with-modern-vscode-icon=                     | [[https://github.com/vdegenne][→ Valentin Degenne]]         | [[/icons/preview/modern-vscode_128.png]]                     | [[https://github.com/VSCodeEmacs/Emacs][→ Link]]  |
-| =--with-modern-yellow-icon=                     | Unknown                    | [[/icons/preview/modern-yellow_128.png]]                     | [[http://getdrawings.com/emacs-icon#emacs-icon-75.png][→ Link]]  |
-| =--with-nobu417-big-sur-icon=                   | [[https://github.com/nobu417][→ Nobuyuki Sato]]            | [[/icons/preview/nobu417-big-sur_128.png]]                   | [[https://github.com/nobu417/emacs-icon-replacement-for-macos-big-sur][→ Link]]  |
-| =--with-retro-emacs-logo-icon=                  | [[https://www.ee.ryerson.ca/~elf/][→ Luis Fernandes]]           | [[/icons/preview/retro-emacs-logo_128.png]]                  | [[https://en.m.wikipedia.org/wiki/File:Emacs-logo.svg][→ Link]]  |
-| =--with-retro-gnu-meditate-levitate-icon=       | Nevrax Design Team         | [[/icons/preview/retro-gnu-meditate-levitate_128.png]]       | [[https://www.gnu.org/graphics/meditate.en.html][→ Link]]  |
-| =--with-retro-sink-bw-icon=                     | Unknown                    | [[/icons/preview/retro-sink-bw_128.png]]                     | [[https://www.teuton.org/~ejm/emacsicon/][→ Link]]  |
-| =--with-retro-sink-icon=                        | [[https://www.teuton.org/~ejm/][→ Erik Mugele]]              | [[/icons/preview/retro-sink_128.png]]                        | [[https://www.teuton.org/~ejm/emacsicon/][→ Link]]  |
-| =--with-savchenkovaleriy-big-sur-icon=          | [[https://github.com/SavchenkoValeriy][→ Valeriy Savchenko]]        | [[/icons/preview/savchenkovaleriy-big-sur_128.png]]          | [[https://github.com/SavchenkoValeriy/emacs-icons][→ Link]]  |
-| =--with-skamacs-icon=                           | [[https://github.com/compufox][→ compufox]]                 | [[/icons/preview/skamacs_128.png]]                           | [[https://github.com/compufox/skamacs-icon][→ Link]]  |
-| =--with-spacemacs-icon=                         | [[https://github.com/nashamri][→ Nasser Alshammari]]        | [[/icons/preview/spacemacs_128.png]]                         | [[https://github.com/nashamri/spacemacs-logo][→ Link]]  |
-| =--with-savchenkovaleriy-big-sur-3d-icon=       | [[https://github.com/SavchenkoValeriy][→ Valeriy Savchenko]]        | [[/icons/preview/savchenkovaleriy-big-sur-3d_128.png]]       | [[https://github.com/SavchenkoValeriy/emacs-icons][→ Link]]  |
-| =--with-savchenkovaleriy-big-sur-curvy-3d-icon= | [[https://github.com/SavchenkoValeriy][→ Valeriy Savchenko]]        | [[/icons/preview/savchenkovaleriy-big-sur-curvy-3d_128.png]] | [[https://github.com/SavchenkoValeriy/emacs-icons][→ Link]]  |
+#+begin_src yaml
+icon: dragon-plus
+#+end_src
+
+See the [[./community/icons/README.md][→ Icons Gallery]] for all available icons with previews.
+
+#+begin_quote
+*Note*: The =--with-*-icon= command line options are deprecated and will be removed on 2026-03-14. Please migrate to using =build.yml=.
+#+end_quote
 
 ** Emacs configuration
 
@@ -494,13 +502,15 @@ By default =emacs-plus@28= uses the following features.
 | =--with-no-frame-refocus=              | disables frame re-focus (ie. closing one frame does not refocus another one) |
 | =--with-no-titlebar=                   | build [[#no-titlebar][→ without titlebar]]                                                     |
 | =--with-no-titlebar-and-round-corners= | build [[#no-titlebar][→ without titlebar]], but round corners instead of square                |
-| =--with-x11=                           | build with x11 support                                                       |
+| =--with-x11=                           | build with x11 support (disables Cocoa, no =Emacs.app= bundle)               |
 | =--with-xwidgets=                      | build [[#xwidgets-webkit][→ with xwidgets]] support                                                |
-| =--without-cocoa=                      | build a non-Cocoa version of Emacs (terminal only)                           |
+| =--without-cocoa=                      | build a non-Cocoa version of Emacs (terminal only, no =Emacs.app= bundle)    |
 | =--with-imagemagick=                   | build with =imagemagick= support                                               |
 | =--HEAD=                               | build from =emacs-28= branch                                                   |
 | =--with-native-comp=                   | build with native compilation aka [[#gccemacs][→ gccemacs]]                                 |
 |                                      |                                                                              |
+
+*Note:* Options =--with-x11= and =--without-cocoa= produce terminal/X11 builds that do not include =Emacs.app=. Icon options are ignored for these builds.
 
 *** Emacs 27
 
@@ -521,11 +531,13 @@ By default =emacs-plus@27= uses the following features.
 | =--with-mailutils=        | build with mailutils support                                                 |
 | =--with-no-frame-refocus= | disables frame re-focus (ie. closing one frame does not refocus another one) |
 | =--with-no-titlebar=      | build [[#no-titlebar][→ without titlebar]]                                                     |
-| =--with-x11=              | build with x11 support                                                       |
+| =--with-x11=              | build with x11 support (disables Cocoa, no =Emacs.app= bundle)               |
 | =--with-xwidgets=         | build [[#xwidgets-webkit][→ with xwidgets]] support                                                |
-| =--without-cocoa=         | build a non-Cocoa version of Emacs (terminal only)                           |
+| =--without-cocoa=         | build a non-Cocoa version of Emacs (terminal only, no =Emacs.app= bundle)    |
 | =--without-imagemagick=   | build without =imagemagick= support                                            |
 | =--HEAD=                  | build from =emacs-27= branch                                                   |
+
+*Note:* Options =--with-x11= and =--without-cocoa= produce terminal/X11 builds that do not include =Emacs.app=. Icon options are ignored for these builds.
 
 *** Emacs 26
 
@@ -533,29 +545,29 @@ Emacs 26 comes without any available options due to [[https://github.com/d12fros
 
 ** FAQ
 
-*** How to change/pin commit =emacs-plus@30= is built from
+*** How to pin a specific commit
 
-The most current development version is consistently compiled from a specific branch. At the time of this writing, for instance, =emacs-plus@30= is being built from the =emacs-30= branch.
+Development versions (=emacs-plus@30=, =emacs-plus@31=) are built from their respective branches (=emacs-30=, =master=). Ordinarily, =brew= will update to the latest commit during installation.
 
-Ordinarily, =brew= will update to the latest commit in the specified branch during installation, meaning the exact commit you're building from varies depending on the installation timing. As development versions are less stable than official releases, some users may prefer to pin a specific commit.
+As development versions are less stable than official releases, you may want to pin a specific commit. The recommended way is to use =~/.config/emacs-plus/build.yml=:
 
-Usually this is done by modifying formula (i.e. by executing =brew edit emacs-plus@30= and altering the =url= directive), but you can also set =HOMEBREW_EMACS_PLUS_30_REVISION= environment variable before installing =emacs-plus@30=:
-
-#+begin_src bash
-  $ HOMEBREW_EMACS_PLUS_30_REVISION=6abea4d98d1d964c68a78cb9b5321071da851654 brew install emacs-plus@30 [OPTIONS]
+#+begin_src yaml
+revision:
+  "30": 6abea4d98d1d964c68a78cb9b5321071da851654
+  "31": abc123def456789
 #+end_src
 
-*** How to change/pin commit =emacs-plus@31= is built from
-
-The most current development version is consistently compiled from a specific branch. At the time of this writing, for instance, =emacs-plus@31= is being built from the =master= branch.
-
-Ordinarily, =brew= will update to the latest commit in the specified branch during installation, meaning the exact commit you're building from varies depending on the installation timing. As development versions are less stable than official releases, some users may prefer to pin a specific commit.
-
-Usually this is done by modifying formula (i.e. by executing =brew edit emacs-plus@31= and altering the =url= directive), but you can also set =HOMEBREW_EMACS_PLUS_31_REVISION= environment variable before installing =emacs-plus@31=:
+Then install or reinstall:
 
 #+begin_src bash
-  $ HOMEBREW_EMACS_PLUS_31_REVISION=6abea4d98d1d964c68a78cb9b5321071da851654 brew install emacs-plus@31 [OPTIONS]
+  $ brew reinstall emacs-plus@30
 #+end_src
+
+The build will display the pinned revision during installation.
+
+#+begin_quote
+*Deprecated*: Environment variables =HOMEBREW_EMACS_PLUS_30_REVISION= and =HOMEBREW_EMACS_PLUS_31_REVISION= still work but are deprecated. Please migrate to =build.yml=.
+#+end_quote
 
 ** Screenshots
 

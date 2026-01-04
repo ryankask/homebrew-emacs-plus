@@ -36,6 +36,47 @@ class EmacsBase < Formula
     end
   end
 
+  # Read revision from build.yml at class definition time
+  # Returns revision string for given version, or nil if not set
+  def self.revision_from_config(version)
+    require 'yaml'
+    require 'etc'
+
+    # Get real home directory
+    real_home = Etc.getpwuid.dir
+
+    # Check for config file
+    config_path = if ENV["HOMEBREW_EMACS_PLUS_BUILD_CONFIG"]
+      File.expand_path(ENV["HOMEBREW_EMACS_PLUS_BUILD_CONFIG"])
+    else
+      paths = [
+        "#{real_home}/.config/emacs-plus/build.yml",
+        "#{real_home}/.emacs-plus-build.yml"
+      ]
+      paths.find { |p| File.exist?(p) }
+    end
+
+    return nil unless config_path && File.exist?(config_path)
+
+    begin
+      config = YAML.load_file(config_path)
+      return nil unless config.is_a?(Hash) && config["revision"]
+
+      revision = config["revision"]
+      # Support both: revision: "abc" (single) or revision: { "30": "abc" } (versioned)
+      if revision.is_a?(Hash)
+        # Try both string and integer keys
+        revision[version.to_s] || revision[version]
+      else
+        # Single revision applies to all versions (not recommended but supported)
+        revision
+      end
+    rescue => e
+      # Silently ignore parse errors at class load time
+      nil
+    end
+  end
+
   # ============================================================
   # Community Patches & Icons System
   # ============================================================
@@ -87,6 +128,19 @@ class EmacsBase < Formula
     end
   end
 
+  # Format maintainer for display, handling both string and object formats
+  # Returns nil if maintainer is not provided or empty
+  def format_maintainer(maintainer)
+    return nil unless maintainer
+    if maintainer.is_a?(String)
+      "@#{maintainer}"
+    elsif maintainer["github"]
+      "@#{maintainer["github"]}"
+    elsif maintainer["name"]
+      maintainer["name"]
+    end
+  end
+
   def self.formula_root
     @@formula_root
   end
@@ -125,10 +179,11 @@ class EmacsBase < Formula
 
     emacs_ver = version.to_s.split(".").first
     unless metadata["compatibility"]["emacs_versions"].include?(emacs_ver)
+      maintainer_str = format_maintainer(metadata["maintainer"]) || "Unknown"
       odie <<~ERROR
         Patch '#{name}' does not support Emacs #{emacs_ver}
         Supported versions: #{metadata["compatibility"]["emacs_versions"].join(", ")}
-        Maintainer: @#{metadata["maintainer"]["github"]}
+        Maintainer: #{maintainer_str}
       ERROR
     end
 
@@ -164,7 +219,11 @@ class EmacsBase < Formula
       metadata_file = "#{icon_dir}/metadata.json"
       metadata = File.exist?(metadata_file) ? JSON.parse(File.read(metadata_file)) : {}
 
-      return { name: name, path: icon_file, type: "community", metadata: metadata }
+      # Check for Tahoe Assets.car (macOS 26+)
+      assets_car = "#{icon_dir}/Assets.car"
+      tahoe_path = File.exist?(assets_car) ? assets_car : nil
+
+      return { name: name, path: icon_file, tahoe_path: tahoe_path, type: "community", metadata: metadata }
     end
 
     # Fallback to legacy icons (during deprecation period)
@@ -217,6 +276,63 @@ class EmacsBase < Formula
     puts
   end
 
+  def check_icon_compatibility
+    # Check if any icon option is used with non-Cocoa builds
+    return if (build.with? "cocoa") && (build.without? "x11")
+
+    # Check for --with-*-icon options
+    used_icon = ICONS_CONFIG.keys.find { |icon| build.with? "#{icon}-icon" }
+    if used_icon
+      odie "Icon options (--with-#{used_icon}-icon) are not compatible with --with-x11 or --without-cocoa. " \
+           "These build configurations do not produce Emacs.app."
+    end
+
+    # Check for icon in build.yml config
+    config = custom_config
+    if config["icon"]
+      odie "Icon configuration in build.yml is not compatible with --with-x11 or --without-cocoa. " \
+           "These build configurations do not produce Emacs.app."
+    end
+  end
+
+  def check_pinned_revision(version)
+    # Check for revision from build.yml config
+    config = custom_config
+    if config["revision"]
+      revision = if config["revision"].is_a?(Hash)
+        config["revision"][version.to_s] || config["revision"][version]
+      else
+        config["revision"]
+      end
+
+      if revision
+        ohai "Building from pinned revision (via build.yml)"
+        puts "  Revision: #{revision}"
+        puts "  To use the latest commit, remove 'revision' from your build.yml"
+        puts
+        return
+      end
+    end
+
+    # Check for revision from environment variable (deprecated)
+    env_var = "HOMEBREW_EMACS_PLUS_#{version}_REVISION"
+    revision = ENV[env_var]
+    return unless revision
+
+    opoo "Building from pinned revision via #{env_var}"
+    puts "  Revision: #{revision}"
+    puts
+    puts "  WARNING: Environment variable configuration is deprecated."
+    puts "  Please migrate to build.yml by adding:"
+    puts
+    puts "    revision:"
+    puts "      \"#{version}\": #{revision}"
+    puts
+    puts "  to ~/.config/emacs-plus/build.yml, then unset the variable:"
+    puts "    unset #{env_var}"
+    puts
+  end
+
   def validate_custom_config
     config = custom_config
     return if config.empty?
@@ -249,6 +365,26 @@ class EmacsBase < Formula
       end
     end
 
+    # Validate revision
+    if config["revision"]
+      case config["revision"]
+      when String
+        # Single revision for all versions (valid but not recommended)
+        unless config["revision"].match?(/\A[a-f0-9]+\z/i)
+          errors << "'revision' must be a valid git commit hash"
+        end
+      when Hash
+        # Version-specific revisions: { "30": "abc123", "31": "def456" }
+        config["revision"].each do |ver, rev|
+          unless rev.is_a?(String) && rev.match?(/\A[a-f0-9]+\z/i)
+            errors << "'revision.#{ver}' must be a valid git commit hash"
+          end
+        end
+      else
+        errors << "'revision' must be a string or hash with version keys"
+      end
+    end
+
     unless errors.empty?
       error_msg = "build.yml validation failed:\n" + errors.map { |e| "  - #{e}" }.join("\n")
       raise error_msg
@@ -273,9 +409,8 @@ class EmacsBase < Formula
       puts "  - #{patch[:name]} (#{patch[:type]})"
 
       if patch[:type] == "community"
-        if patch[:metadata] && patch[:metadata]["maintainer"]
-          puts "    Maintainer: @#{patch[:metadata]["maintainer"]["github"]}"
-        end
+        maintainer_str = format_maintainer(patch[:metadata]&.dig("maintainer"))
+        puts "    Maintainer: #{maintainer_str}" if maintainer_str
         system "patch", "-p1", "-i", patch[:path]
         odie "Failed to apply community patch: #{patch[:name]}" unless $?.success?
       else
@@ -314,12 +449,29 @@ class EmacsBase < Formula
 
     case icon[:type]
     when "community", "legacy"
-      if icon[:metadata] && icon[:metadata]["maintainer"]
-        puts "  Maintainer: @#{icon[:metadata]["maintainer"]["github"]}"
-      end
+      maintainer_str = format_maintainer(icon[:metadata]&.dig("maintainer"))
+      puts "  Maintainer: #{maintainer_str}" if maintainer_str
       puts "  Copying #{icon[:path]} -> #{target_icon}"
       FileUtils.rm_f(target_icon)
       FileUtils.cp(icon[:path], target_icon)
+
+      # Copy Tahoe Assets.car if available (macOS 26+)
+      if icon[:tahoe_path]
+        target_assets = "#{icons_dir}/Assets.car"
+        puts "  Copying #{icon[:tahoe_path]} -> #{target_assets} (Tahoe)"
+        FileUtils.rm_f(target_assets)
+        FileUtils.cp(icon[:tahoe_path], target_assets)
+
+        # Set CFBundleIconName in plist for Tahoe icon selection
+        # Icon name comes from metadata, defaults to "Emacs"
+        tahoe_icon_name = icon[:metadata]&.dig("tahoe_icon_name") || "Emacs"
+        plist_path = File.expand_path("../Info.plist", icons_dir)
+        if File.exist?(plist_path)
+          puts "  Setting CFBundleIconName = #{tahoe_icon_name}"
+          system "/usr/libexec/PlistBuddy -c 'Delete :CFBundleIconName' '#{plist_path}' 2>/dev/null || true"
+          system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleIconName string #{tahoe_icon_name}", plist_path
+        end
+      end
     when "external"
       # External: download with curl, verify SHA256
       tmpfile = Tempfile.new(["icon-", ".icns"])
@@ -344,6 +496,13 @@ class EmacsBase < Formula
     puts "  Icon applied successfully"
   end
 
+  # Apply icon during post_install (for quick testing without rebuild)
+  # Call this from post_install to re-apply icon from build.yml
+  def apply_icon_post_install
+    require_relative 'IconApplier'
+    IconApplier.apply(prefix/"Emacs.app", prefix/"Emacs Client.app")
+  end
+
   # ============================================================
   # PATH Injection
   # ============================================================
@@ -360,6 +519,38 @@ class EmacsBase < Formula
         export PATH='#{escaped_path}'
       fi
     EOS
+  end
+
+  def inject_emacs_plus_site_lisp(major_version)
+    app = "#{prefix}/Emacs.app"
+    site_lisp_dir = "#{app}/Contents/Resources/site-lisp"
+
+    ohai "Creating Emacs Plus site-lisp with ns-emacs-plus-version = #{major_version}"
+
+    # Create site-lisp directory
+    FileUtils.mkdir_p(site_lisp_dir)
+
+    # Create site-start.el with the version variable
+    File.open("#{site_lisp_dir}/site-start.el", "w") do |f|
+      f.write <<~EOS
+        ;;; site-start.el --- Emacs Plus site initialization -*- lexical-binding: t -*-
+
+        ;; This file is automatically generated by emacs-plus.
+        ;; It defines variables to identify this as an Emacs Plus build.
+
+        (defconst ns-emacs-plus-version #{major_version}
+          "Major version of Emacs Plus that built this Emacs.
+        This can be used to detect Emacs Plus in your init.el:
+
+          (when (bound-and-true-p ns-emacs-plus-version)
+            ;; Emacs Plus specific configuration
+            )")
+
+        (provide 'emacs-plus)
+
+        ;;; site-start.el ends here
+      EOS
+    end
   end
 
   def inject_path
@@ -382,6 +573,11 @@ class EmacsBase < Formula
       f.write <<~EOS
         #!/bin/sh
         #{path_injection_snippet.chomp}
+        # Prepend Emacs Plus site-lisp to load-path for site-start.el
+        EMACS_PLUS_SITE_LISP="$(dirname "$0")/../Resources/site-lisp"
+        if [ -d "$EMACS_PLUS_SITE_LISP" ]; then
+          export EMACSLOADPATH="$EMACS_PLUS_SITE_LISP:${EMACSLOADPATH:-}"
+        fi
         exec "$(dirname "$0")/Emacs-real" "$@"
       EOS
     end
@@ -438,12 +634,36 @@ class EmacsBase < Formula
     system "/usr/libexec/PlistBuddy -c \"Add :#{key} #{type} #{escaped_value}\" \"#{plist}\" 2>/dev/null || /usr/libexec/PlistBuddy -c \"Set :#{key} #{escaped_value}\" \"#{plist}\""
   end
 
+  # Escape a string for embedding in an AppleScript double-quoted string
+  # that will be passed to `do shell script` with single-quoted arguments.
+  #
+  # The escaping handles two layers:
+  # 1. Shell: single quotes need '\'' idiom (end quote, escaped quote, start quote)
+  # 2. AppleScript: backslashes and double quotes need escaping in double-quoted strings
+  #
+  # Example: PATH /usr/bin:/a'b becomes /usr/bin:/a'\\''b in the AppleScript source,
+  # which AppleScript parses as /usr/bin:/a'\''b, which shell interprets correctly.
+  #
+  # Note: We use block form for gsub to avoid special meaning of \& and \' in
+  # replacement strings (which would cause incorrect substitutions).
+  def self.escape_for_applescript_shell(str)
+    # First escape single quotes for shell: ' -> '\''
+    shell_escaped = str.to_s.gsub("'") { "'\\''" }
+    # Then escape backslashes and double quotes for AppleScript: \ -> \\, " -> \"
+    shell_escaped.gsub('\\') { '\\\\' }.gsub('"') { '\\"' }
+  end
+
+  # Instance method wrapper for convenience
+  def escape_for_applescript_shell(str)
+    self.class.escape_for_applescript_shell(str)
+  end
+
   def create_emacs_client_app(icons_dir)
     ohai "Creating Emacs Client.app"
 
-    # Prepare PATH for injection into AppleScript
+    # Prepare PATH for injection into AppleScript (see escape_for_applescript_shell)
     path = PATH.new(ORIGINAL_PATHS)
-    escaped_path = path.to_s.gsub("'", "'\\''")
+    escaped_path = escape_for_applescript_shell(path.to_s)
 
     # Create AppleScript source
     client_script = buildpath/"emacs-client.applescript"
@@ -464,7 +684,9 @@ class EmacsBase < Formula
             do shell script pathEnv & "#{prefix}/bin/emacsclient -c -a '' -n " & dropPath
           end try
         end repeat
-        tell application "Emacs" to activate
+        try
+          do shell script "open -a Emacs"
+        end try
       end open
 
       -- Handle launch without files (from Spotlight, Dock, or Finder)
@@ -478,8 +700,26 @@ class EmacsBase < Formula
         try
           do shell script pathEnv & "#{prefix}/bin/emacsclient -c -a '' -n"
         end try
-        tell application "Emacs" to activate
+        try
+          do shell script "open -a Emacs"
+        end try
       end run
+
+      -- Handle org-protocol:// URLs (for org-capture, org-roam, etc.)
+      on open location this_URL
+        set pathInjection to system attribute "EMACS_PLUS_NO_PATH_INJECTION"
+        if pathInjection is "" then
+          set pathEnv to "PATH='#{escaped_path}' "
+        else
+          set pathEnv to ""
+        end if
+        try
+          do shell script pathEnv & "#{prefix}/bin/emacsclient -n " & quoted form of this_URL
+        end try
+        try
+          do shell script "open -a Emacs"
+        end try
+      end open location
     EOS
 
     # Compile AppleScript to application bundle
@@ -511,6 +751,13 @@ class EmacsBase < Formula
     system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleDocumentTypes:0:LSItemContentTypes:4 string public.shell-script", client_plist
     system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleDocumentTypes:0:LSItemContentTypes:5 string public.data", client_plist
 
+    # Register org-protocol URL scheme for org-capture, org-roam, etc.
+    system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes array", client_plist
+    system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes:0 dict", client_plist
+    system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes:0:CFBundleURLName string 'Org Protocol'", client_plist
+    system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes:0:CFBundleURLSchemes array", client_plist
+    system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string org-protocol", client_plist
+
     # Install custom icon (replace osacompile's default droplet icon)
     client_resources_dir = buildpath/"nextstep/Emacs Client.app/Contents/Resources"
 
@@ -521,9 +768,18 @@ class EmacsBase < Formula
     system "rm", "-f", client_resources_dir/"droplet.icns"
     system "rm", "-f", client_resources_dir/"droplet.rsrc"
 
-    # Remove Assets.car file - on macOS 26+, the system prioritizes icon images
-    # from Assets.car over .icns files, so we must remove it to use our custom icon
+    # Handle Assets.car for macOS 26+ (Tahoe)
+    # On Tahoe, the system prioritizes icon images from Assets.car over .icns files
     system "rm", "-f", client_resources_dir/"Assets.car"
+    # If we have a custom Tahoe icon, copy it; otherwise the removal ensures .icns is used
+    if File.exist?(icons_dir/"Assets.car")
+      system "cp", icons_dir/"Assets.car", client_resources_dir/"Assets.car"
+      # Set CFBundleIconName to match the icon name in Assets.car (defaults to "Emacs")
+      icon = resolve_icon
+      tahoe_icon_name = icon&.dig(:metadata, "tahoe_icon_name") || "Emacs"
+      system "/usr/libexec/PlistBuddy -c 'Delete :CFBundleIconName' '#{client_plist}' 2>/dev/null || true"
+      system "/usr/libexec/PlistBuddy", "-c", "Add :CFBundleIconName string #{tahoe_icon_name}", client_plist
+    end
 
     # Set icon file reference (use simple name without spaces)
     # Try Delete first in case osacompile set it, then Add

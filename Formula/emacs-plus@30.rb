@@ -10,7 +10,9 @@ class EmacsPlusAT30 < EmacsBase
   homepage "https://www.gnu.org/software/emacs/"
 
   head do
-    if ENV['HOMEBREW_EMACS_PLUS_30_REVISION']
+    if (config_revision = EmacsBase.revision_from_config(30))
+      url "https://github.com/emacs-mirror/emacs.git", :revision => config_revision
+    elsif ENV['HOMEBREW_EMACS_PLUS_30_REVISION']
       url "https://github.com/emacs-mirror/emacs.git", :revision => ENV['HOMEBREW_EMACS_PLUS_30_REVISION']
     else
       url "https://github.com/emacs-mirror/emacs.git", :branch => "emacs-30"
@@ -51,7 +53,7 @@ class EmacsPlusAT30 < EmacsBase
   depends_on "gnutls"
   depends_on "librsvg"
   depends_on "little-cms2"
-  depends_on "homebrew/core/tree-sitter@0.25"
+  depends_on "tree-sitter@0.25"
   depends_on "webp"
   depends_on "imagemagick" => :optional
   depends_on "dbus" => :optional
@@ -84,7 +86,9 @@ class EmacsPlusAT30 < EmacsBase
   # URL
   #
 
-  if ENV['HOMEBREW_EMACS_PLUS_30_REVISION']
+  if (config_revision = EmacsBase.revision_from_config(30))
+    url "https://github.com/emacs-mirror/emacs.git", :revision => config_revision
+  elsif ENV['HOMEBREW_EMACS_PLUS_30_REVISION']
     url "https://github.com/emacs-mirror/emacs.git", :revision => ENV['HOMEBREW_EMACS_PLUS_30_REVISION']
   end
 
@@ -102,6 +106,7 @@ class EmacsPlusAT30 < EmacsBase
   local_patch "fix-window-role", sha: "1f8423ea7e6e66c9ac6dd8e37b119972daa1264de00172a24a79a710efcb8130"
   local_patch "system-appearance", sha: "9eb3ce80640025bff96ebaeb5893430116368d6349f4eb0cb4ef8b3d58477db6"
   local_patch "round-undecorated-frame", sha: "7451f80f559840e54e6a052e55d1100778abc55f98f1d0c038a24e25773f2874"
+  local_patch "mac-font-use-typo-metrics", sha: "318395d3869d3479da4593360bcb11a5df08b494b995287074d0d744ec562c17"
   local_patch "ns-win", sha: "4829dfa8c447b714e010457f2da6b217be98bf53d454802c253bb6ae9da41038"
 
   #
@@ -111,6 +116,10 @@ class EmacsPlusAT30 < EmacsBase
   def install
     # Check for deprecated --with-*-icon options and auto-migrate
     check_deprecated_icon_option
+    # Check icon options are not used with non-Cocoa builds
+    check_icon_compatibility
+    # Warn if revision is pinned via config or environment variable
+    check_pinned_revision(30)
     # Validate build.yml configuration early to fail fast
     validate_custom_config
 
@@ -128,20 +137,27 @@ class EmacsPlusAT30 < EmacsBase
 
     args << "--without-compress-install" if build.without? "compress-install"
 
-    ENV.append "CFLAGS", "-g -Og" if build.with? "debug"
-    ENV.append "CFLAGS", "-O2 -DFD_SETSIZE=10000 -DDARWIN_UNLIMITED_SELECT"
-
-    ENV.append "CFLAGS", "-I#{Formula["sqlite"].include}"
-    ENV.append "LDFLAGS", "-L#{Formula["sqlite"].opt_lib}"
-
     # Necessary for libgccjit library discovery
     gcc_ver = Formula["gcc"].any_installed_version
     gcc_ver_major = gcc_ver.major
     gcc_lib="#{HOMEBREW_PREFIX}/lib/gcc/#{gcc_ver_major}"
 
-    ENV.append "CFLAGS", "-I#{Formula["gcc"].include}"
-    ENV.append "CFLAGS", "-I#{Formula["libgccjit"].include}"
+    # Enable debug symbols in Homebrew's superenv
+    if build.with? "debug"
+      ENV.set_debug_symbols
+    end
 
+    # Build CFLAGS - pass to configure for includes and defines
+    # Note: Homebrew's superenv handles optimization (-O2) and debug (-g) flags
+    cflags = []
+    cflags << "-DFD_SETSIZE=10000"
+    cflags << "-DDARWIN_UNLIMITED_SELECT"
+    cflags << "-I#{Formula["sqlite"].include}"
+    cflags << "-I#{Formula["gcc"].include}"
+    cflags << "-I#{Formula["libgccjit"].include}"
+    args << "CFLAGS=#{cflags.join(" ")}"
+
+    ENV.append "LDFLAGS", "-L#{Formula["sqlite"].opt_lib}"
     ENV.append "LDFLAGS", "-L#{gcc_lib}"
     ENV.append "LDFLAGS", "-Wl,-rpath,#{gcc_lib}"
 
@@ -199,6 +215,12 @@ class EmacsPlusAT30 < EmacsBase
 
       system "gmake"
 
+      # Generate dSYM bundle for debugging BEFORE install (clang stores symbols
+      # in .o files, and dsymutil needs them to extract debug info)
+      if build.with? "debug"
+        system "dsymutil", "nextstep/Emacs.app/Contents/MacOS/Emacs"
+      end
+
       system "gmake", "install"
 
       icons_dir = buildpath/"nextstep/Emacs.app/Contents/Resources"
@@ -224,17 +246,36 @@ class EmacsPlusAT30 < EmacsBase
       (prefix/"Emacs.app/Contents").install "native-lisp"
       prefix.install "nextstep/Emacs Client.app"
 
+      # inject Emacs Plus site-lisp with ns-emacs-plus-version
+      inject_emacs_plus_site_lisp(30)
+
       # inject PATH to Info.plist
       inject_path
+
+      # Rename dSYM to match the binary name (Emacs-real) so lldb auto-finds it
+      if build.with? "debug"
+        dsym_path = prefix/"Emacs.app/Contents/MacOS/Emacs.dSYM"
+        if dsym_path.exist?
+          mv dsym_path, prefix/"Emacs.app/Contents/MacOS/Emacs-real.dSYM"
+        end
+      end
 
       # inject description for protected resources usage
       inject_protected_resources_usage_desc
 
       # Replace the symlink with one that avoids starting Cocoa.
+      # Check multiple locations so users can copy Emacs.app to /Applications
+      # for better Spotlight integration.
       (bin/"emacs").unlink # Kill the existing symlink
       (bin/"emacs").write <<~EOS
         #!/bin/bash
-        exec #{prefix}/Emacs.app/Contents/MacOS/Emacs "$@"
+        for app in "/Applications/Emacs.app" "$HOME/Applications/Emacs.app" "#{prefix}/Emacs.app"; do
+          if [ -x "$app/Contents/MacOS/Emacs" ]; then
+            exec "$app/Contents/MacOS/Emacs" "$@"
+          fi
+        done
+        echo "Error: Emacs.app not found in /Applications, ~/Applications, or #{prefix}" >&2
+        exit 1
       EOS
     else
       if build.with? "x11"
@@ -265,6 +306,12 @@ class EmacsPlusAT30 < EmacsBase
       end
 
       system "gmake"
+
+      # Generate dSYM bundle for debugging BEFORE install (non-Cocoa build)
+      if build.with? "debug"
+        system "dsymutil", "src/emacs"
+      end
+
       system "gmake", "install"
     end
 
@@ -282,8 +329,24 @@ class EmacsPlusAT30 < EmacsBase
 
   def post_install
     emacs_info_dir = info/"emacs"
-    Dir.glob(emacs_info_dir/"*.info") do |info_filename|
+    Dir.glob(emacs_info_dir/"*.info{,.gz}") do |info_filename|
       system "install-info", "--info-dir=#{emacs_info_dir}", info_filename
+    end
+
+    # Re-apply icon from build.yml (allows quick testing via `brew postinstall`)
+    apply_icon_post_install
+
+    # Re-sign the app for macOS Sequoia compatibility (issue #742)
+    app_path = prefix/"Emacs.app"
+    if app_path.exist?
+      ohai "Re-signing Emacs.app for macOS compatibility..."
+      system "codesign", "--force", "--deep", "--sign", "-", app_path.to_s
+    end
+
+    # Also re-sign Emacs Client.app
+    client_path = prefix/"Emacs Client.app"
+    if client_path.exist?
+      system "codesign", "--force", "--deep", "--sign", "-", client_path.to_s
     end
   end
 
@@ -292,18 +355,21 @@ class EmacsPlusAT30 < EmacsBase
       Emacs.app and Emacs Client.app were installed to:
         #{prefix}
 
-      To link the application to default Homebrew App location:
+      For best Spotlight integration, copy the apps to /Applications:
+        cp -r #{prefix}/Emacs.app /Applications/
+        cp -r "#{prefix}/Emacs Client.app" /Applications/
+
+      The `emacs` command will automatically find the app in /Applications.
+
+      Alternatively, create Finder aliases (less reliable with Spotlight):
         osascript -e 'tell application "Finder" to make alias file to posix file "#{prefix}/Emacs.app" at posix file "/Applications" with properties {name:"Emacs.app"}'
-        osascript -e 'tell application "Finder" to make alias file to posix file "#{prefix}/Emacs Client.app" at posix file "/Applications" with properties {name:"Emacs Client.app"}'
 
       Custom icons and patches can be configured via ~/.config/emacs-plus/build.yml
       See: https://github.com/d12frosted/homebrew-emacs-plus/blob/master/community/README.md
 
-      Your PATH value was injected into Emacs.app via a wrapper script.
-      This solves the issue with macOS Sequoia ignoring LSEnvironment in Info.plist.
-
-      To disable PATH injection, set EMACS_PLUS_NO_PATH_INJECTION before running Emacs:
-        export EMACS_PLUS_NO_PATH_INJECTION=1
+      If Emacs fails to start with "Library not loaded" errors after upgrading
+      dependencies (e.g., tree-sitter, libgccjit), reinstall emacs-plus:
+        brew reinstall emacs-plus@30
 
       Report any issues to https://github.com/d12frosted/homebrew-emacs-plus
     EOS

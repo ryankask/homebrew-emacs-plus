@@ -1,0 +1,216 @@
+#+TITLE: Emacs Plus News
+#+AUTHOR: Boris Buliga
+
+This file documents notable changes to Emacs Plus.
+
+* 2025-01-02
+
+** New Icons
+
+*** dragon-plus
+
+New Tahoe-compatible version of the dragon icon with liquid glass effects. Designed for macOS 26+ using Icon Composer with proper layering, gradients, and translucency.
+
+** New Features
+
+*** Detect Emacs Plus in init.el
+
+Emacs Plus @30 and @31 now define =ns-emacs-plus-version= which you can use to detect Emacs Plus in your init.el:
+
+#+begin_src elisp
+(when (bound-and-true-p ns-emacs-plus-version)
+  ;; Emacs Plus specific configuration
+  )
+
+;; Or check specific version
+(when (and (bound-and-true-p ns-emacs-plus-version)
+           (>= ns-emacs-plus-version 31))
+  ;; Emacs Plus 31+ specific
+  )
+#+end_src
+
+** Deprecations
+
+*** --with-imagemagick deprecated in @31
+
+The =--with-imagemagick= option is deprecated in =emacs-plus@31=. Modern Emacs has native support for most image formats (SVG via librsvg, WebP, PNG, JPEG, GIF). If you rely on ImageMagick, please open an issue describing your use case.
+
+** Bug Fixes
+
+*** Info dir file regeneration
+
+Fixed the =dir= file not being created in the Info directory. Homebrew's cleaning phase was deleting it, but =post_install= now regenerates it properly. Also fixed the glob pattern to handle both =.info= and =.info.gz= files for users with =--with-compress-install=.
+
+* 2025-12-31
+
+** New Features
+
+*** Pre-built binaries via Homebrew Cask
+
+Emacs+ is now available as pre-built binaries for faster installation:
+
+#+begin_src bash
+  $ brew install --cask emacs-plus@30   # Stable
+  $ brew install --cask emacs-plus@31   # Development
+#+end_src
+
+Benefits:
+- *Fast installation* - Download instead of compile (~1 min vs ~30 min)
+- *Self-contained* - All dependencies bundled, no Homebrew libs required
+- *Nightly builds* - Automatically updated at 3 AM UTC
+
+Cask builds include: native compilation (AOT), xwidgets, tree-sitter, imagemagick, mailutils, and Emacs Client.app.
+
+Use the formula (=brew install emacs-plus@30=) if you need custom icons, patches, or specific build options. Use the cask for quick installation with sensible defaults.
+
+Supported platforms: macOS 14+ (Sonoma, Sequoia, Tahoe) on ARM64 and Intel.
+
+* 2025-12-29
+
+** New Icons
+
+*** liquid-glass
+
+New icon designed for macOS 26 (Tahoe) liquid glass aesthetic. Contributed by [[https://github.com/leaferiksen][leaferiksen]].
+
+*** 17 icons from homebrew-emacs-head
+
+Added icons from the [[https://github.com/daviderestivo/homebrew-emacs-head][homebrew-emacs-head]] project:
+
+- =golden-yak= - by emacsfodder
+- =infinity-yak-*= (13 variants) - by emacsfodder
+- =modern-paper-icons= - by snwh
+- =modern-purple= - by NicolasPetton
+
+** Improvements
+
+*** Icons gallery
+
+All 76 icons are now browsable in a [[./community/icons/README.md][visual gallery]] with previews, author attribution, and source links.
+
+* 2025-12-28
+
+** New Features
+
+*** Revision pinning via build.yml
+
+You can now pin to a specific git revision using =~/.config/emacs-plus/build.yml=:
+
+#+begin_src yaml
+revision:
+  "30": abc123def456
+  "31": 789xyz
+#+end_src
+
+The environment variables =HOMEBREW_EMACS_PLUS_XX_REVISION= are now deprecated in favor of this approach. See [[./README.org#how-to-pin-a-specific-commit][documentation]] for details.
+
+*** macOS font rendering fix for CJK text
+
+Added =mac-font-use-typo-metrics= patch (from railwaycat/emacs-mac) that fixes line height calculation for mixed CJK and English text. This resolves issues with partial screen rendering in vterm and other applications.
+
+*** org-protocol support in Emacs Client.app
+
+=Emacs Client.app= now handles =org-protocol://= URLs out of the box. This enables org-capture from browser extensions, org-roam protocol, and other integrations without additional configuration. Just add =(require 'org-protocol)= to your Emacs init file.
+
+** Improvements
+
+*** Better error messages for incompatible options
+
+The formula now errors out early when icon options (=--with-*-icon= or via =build.yml=) are used with =--with-x11= or =--without-cocoa=, since these builds don't produce =Emacs.app=.
+
+*** Clearer documentation for non-Cocoa builds
+
+Updated option descriptions to clarify that =--with-x11= and =--without-cocoa= produce terminal/X11 builds without =Emacs.app=.
+
+*** Library not loaded errors
+
+Added caveat explaining how to fix "Library not loaded" errors after upgrading dependencies like =tree-sitter= or =libgccjit=: simply run =brew reinstall emacs-plus@XX=.
+
+*** Better Spotlight integration
+
+The =emacs= command now automatically finds =Emacs.app= in =/Applications= or =~/Applications=. This allows you to copy the app for better Spotlight indexing:
+
+#+begin_src bash
+cp -r "$(brew --prefix)/opt/emacs-plus@30/Emacs.app" /Applications/
+#+end_src
+
+The =emacs= command will continue to work without any manual adjustments.
+
+* 2025-12-26
+
+** Community Patches
+
+*** Window blurring and alpha transparency
+
+New community patch adds support for window blurring and configurable alpha transparency effects.
+
+*** Async process read performance
+
+New community patch improves async process read performance.
+
+* 2025-12-14
+
+** New Features
+
+*** Community patches and icons system
+
+Introduced a new system for community-contributed patches and icons via =~/.config/emacs-plus/build.yml=. This allows users to easily apply patches and icons from a community registry or external URLs.
+
+The =--with-*-icon= options are now deprecated (removal date: 2026-03-14). Please migrate to =build.yml=.
+
+See [[./community/README.md][Community Documentation]] for details.
+
+* 2025-11-24
+
+** New Features
+
+*** Emacs Client.app
+
+Starting with =emacs-plus@30= and =emacs-plus@31=, the formula now includes =Emacs Client.app= - a companion application for opening files in Emacs from Finder, Spotlight, and other macOS applications. It connects to an existing Emacs daemon using =emacsclient=.
+
+*** macOS 26 (Tahoe) compatibility
+
+Fixed =Emacs Client.app= icon display on macOS 26+ by removing =Assets.car=.
+
+* 2025-10-17
+
+** New Features
+
+*** PATH injection for macOS Sequoia
+
+Fixed PATH injection on macOS 15 (Sequoia) which was ignoring =LSEnvironment= in =Info.plist=. The fix uses a wrapper script to inject PATH from your shell.
+
+To disable PATH injection:
+#+begin_src bash
+export EMACS_PLUS_NO_PATH_INJECTION=1
+#+end_src
+
+* 2025-08-15
+
+** Releases
+
+*** Emacs 30.2
+
+Updated =emacs-plus@30= to Emacs 30.2.
+
+* 2025-02-23
+
+** Releases
+
+*** Emacs 30.1
+
+Released =emacs-plus@30= with Emacs 30.1 - the first stable release of Emacs 30.
+
+** Changes
+
+*** Emacs 30 is now the default
+
+=emacs-plus= (without version suffix) now installs Emacs 30 instead of Emacs 29.
+
+*** Native compilation enabled by default
+
+Native compilation is now enabled by default for Emacs 30+. The =--with-native-comp= option is no longer needed.
+
+*** libjansson dependency removed
+
+The =libjansson= dependency was removed for Emacs 30.1+ as it's no longer required.

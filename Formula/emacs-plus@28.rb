@@ -118,8 +118,16 @@ class EmacsPlusAT28 < EmacsBase
 
     args << "--with-native-compilation" if build.with? "native-comp"
 
-    ENV.append "CFLAGS", "-g -Og" if build.with? "debug"
-    ENV.append "CFLAGS", "-O2 -DFD_SETSIZE=10000 -DDARWIN_UNLIMITED_SELECT"
+    # Enable debug symbols in Homebrew's superenv
+    if build.with? "debug"
+      ENV.set_debug_symbols
+    end
+
+    # Build CFLAGS - pass to configure for includes and defines
+    # Note: Homebrew's superenv handles optimization (-O2) and debug (-g) flags
+    cflags = []
+    cflags << "-DFD_SETSIZE=10000"
+    cflags << "-DDARWIN_UNLIMITED_SELECT"
 
     # Necessary for libgccjit library discovery
     if build.with? "native-comp"
@@ -127,13 +135,15 @@ class EmacsPlusAT28 < EmacsBase
       gcc_ver_major = gcc_ver.major
       gcc_lib="#{HOMEBREW_PREFIX}/lib/gcc/#{gcc_ver_major}"
 
-      ENV.append "CFLAGS", "-I#{Formula["gcc"].include}"
-      ENV.append "CFLAGS", "-I#{Formula["libgccjit"].include}"
+      cflags << "-I#{Formula["gcc"].include}"
+      cflags << "-I#{Formula["libgccjit"].include}"
 
       ENV.append "LDFLAGS", "-L#{gcc_lib}"
       ENV.append "LDFLAGS", "-I#{Formula["gcc"].include}"
       ENV.append "LDFLAGS", "-I#{Formula["libgccjit"].include}"
     end
+
+    args << "CFLAGS=#{cflags.join(" ")}"
 
     args <<
       if build.with? "dbus"
@@ -184,6 +194,13 @@ class EmacsPlusAT28 < EmacsBase
       end
 
       system "gmake"
+
+      # Generate dSYM bundle for debugging BEFORE install (clang stores symbols
+      # in .o files, and dsymutil needs them to extract debug info)
+      if build.with? "debug"
+        system "dsymutil", "nextstep/Emacs.app/Contents/MacOS/Emacs"
+      end
+
       system "gmake", "install"
 
       icons_dir = buildpath/"nextstep/Emacs.app/Contents/Resources"
@@ -241,6 +258,12 @@ class EmacsPlusAT28 < EmacsBase
       end
 
       system "gmake"
+
+      # Generate dSYM bundle for debugging BEFORE install (non-Cocoa build)
+      if build.with? "debug"
+        system "dsymutil", "src/emacs"
+      end
+
       system "gmake", "install"
     end
 
@@ -271,8 +294,20 @@ class EmacsPlusAT28 < EmacsBase
   end
 
   def post_install
+    emacs_info_dir = info/"emacs"
+    Dir.glob(emacs_info_dir/"*.info{,.gz}") do |info_filename|
+      system "install-info", "--info-dir=#{emacs_info_dir}", info_filename
+    end
+
     if build.with? "native-comp"
       ln_sf "#{Dir[opt_prefix/"lib/emacs/*"].first}/native-lisp", "#{opt_prefix}/Emacs.app/Contents/native-lisp"
+    end
+
+    # Re-sign the app for macOS Sequoia compatibility (issue #742)
+    app_path = prefix/"Emacs.app"
+    if app_path.exist?
+      ohai "Re-signing Emacs.app for macOS compatibility..."
+      system "codesign", "--force", "--deep", "--sign", "-", app_path.to_s
     end
   end
 
