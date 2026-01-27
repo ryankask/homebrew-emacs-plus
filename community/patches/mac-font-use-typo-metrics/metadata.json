@@ -1,0 +1,15 @@
+{
+  "name": "mac-font-use-typo-metrics",
+  "description": "Fixes line height calculation for CJK fonts by using OS/2 typo metrics. Use this if you see rendering glitches (partial screen, misaligned text) in vterm or other modes with mixed CJK/English text. Caveat: may cause reduced line height with some Latin fonts (e.g., PragmataPro).",
+  "maintainer": {
+    "github": "Dieken"
+  },
+  "compatibility": {
+    "emacs_versions": [
+      "29",
+      "30",
+      "31"
+    ]
+  },
+  "created_at": "2025-12-28"
+}

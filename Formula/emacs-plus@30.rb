@@ -31,7 +31,6 @@ class EmacsPlusAT30 < EmacsBase
   option "with-x11", "Experimental: build with x11 support"
   option "with-debug", "Build with debug symbols and debugger friendly optimizations"
   option "with-xwidgets", "Experimental: build with xwidgets support"
-  option "with-no-frame-refocus", "Disables frame re-focus (ie. closing one frame does not refocus another one)"
   option "with-compress-install", "Build with compressed install optimization"
 
   #
@@ -93,28 +92,19 @@ class EmacsPlusAT30 < EmacsBase
   end
 
   #
-  # Icons
-  #
-
-  inject_icon_options
-
-  #
   # Patches
   #
 
-  opoo "The option --with-no-frame-refocus is not required anymore in emacs-plus@30." if build.with? "no-frame-refocus"
   local_patch "fix-window-role", sha: "1f8423ea7e6e66c9ac6dd8e37b119972daa1264de00172a24a79a710efcb8130"
   local_patch "system-appearance", sha: "9eb3ce80640025bff96ebaeb5893430116368d6349f4eb0cb4ef8b3d58477db6"
   local_patch "round-undecorated-frame", sha: "7451f80f559840e54e6a052e55d1100778abc55f98f1d0c038a24e25773f2874"
-  local_patch "mac-font-use-typo-metrics", sha: "318395d3869d3479da4593360bcb11a5df08b494b995287074d0d744ec562c17"
+  local_patch "fix-macos-tahoe-scrolling", sha: "a5abd2f0aa451a05939e9c257c43927243ab3348fd84a244c079e49f89dff895"
 
   #
   # Install
   #
 
   def install
-    # Check for deprecated --with-*-icon options and auto-migrate
-    check_deprecated_icon_option
     # Check icon options are not used with non-Cocoa builds
     check_icon_compatibility
     # Warn if revision is pinned via config or environment variable
@@ -223,19 +213,9 @@ class EmacsPlusAT30 < EmacsBase
       system "gmake", "install"
 
       icons_dir = buildpath/"nextstep/Emacs.app/Contents/Resources"
-      ICONS_CONFIG.each_key do |icon|
-        next if build.without? "#{icon}-icon"
 
-        rm "#{icons_dir}/Emacs.icns"
-        resource("#{icon}-icon").stage do
-          icons_dir.install Dir["*.icns*"].first => "Emacs.icns"
-        end
-      end
-
-      # Apply custom icon from build.yml (if no deprecated --with-*-icon option used)
-      unless ICONS_CONFIG.keys.any? { |icon| build.with? "#{icon}-icon" }
-        apply_custom_icon(icons_dir)
-      end
+      # Apply custom icon from build.yml
+      apply_custom_icon(icons_dir)
 
       # Create Emacs Client.app (AppleScript-based to handle file opening from Finder)
       create_emacs_client_app(icons_dir)
@@ -250,14 +230,6 @@ class EmacsPlusAT30 < EmacsBase
 
       # inject PATH to Info.plist
       inject_path
-
-      # Rename dSYM to match the binary name (Emacs-real) so lldb auto-finds it
-      if build.with? "debug"
-        dsym_path = prefix/"Emacs.app/Contents/MacOS/Emacs.dSYM"
-        if dsym_path.exist?
-          mv dsym_path, prefix/"Emacs.app/Contents/MacOS/Emacs-real.dSYM"
-        end
-      end
 
       # inject description for protected resources usage
       inject_protected_resources_usage_desc

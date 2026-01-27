@@ -81,12 +81,6 @@ class EmacsPlusAT29 < EmacsBase
   end
 
   #
-  # Icons
-  #
-
-  inject_icon_options
-
-  #
   # Patches
   #
 
@@ -94,15 +88,12 @@ class EmacsPlusAT29 < EmacsBase
   local_patch "fix-window-role", sha: "1f8423ea7e6e66c9ac6dd8e37b119972daa1264de00172a24a79a710efcb8130"
   local_patch "system-appearance", sha: "d6ee159839b38b6af539d7b9bdff231263e451c1fd42eec0d125318c9db8cd92"
   local_patch "round-undecorated-frame", sha: "7451f80f559840e54e6a052e55d1100778abc55f98f1d0c038a24e25773f2874"
-  local_patch "mac-font-use-typo-metrics", sha: "318395d3869d3479da4593360bcb11a5df08b494b995287074d0d744ec562c17"
 
   #
   # Install
   #
 
   def install
-    # Check for deprecated --with-*-icon options and auto-migrate
-    check_deprecated_icon_option
     # Check icon options are not used with non-Cocoa builds
     check_icon_compatibility
     # Warn if revision is pinned via config or environment variable
@@ -215,19 +206,9 @@ class EmacsPlusAT29 < EmacsBase
       system "gmake", "install"
 
       icons_dir = buildpath/"nextstep/Emacs.app/Contents/Resources"
-      ICONS_CONFIG.each_key do |icon|
-        next if build.without? "#{icon}-icon"
 
-        rm "#{icons_dir}/Emacs.icns"
-        resource("#{icon}-icon").stage do
-          icons_dir.install Dir["*.icns*"].first => "Emacs.icns"
-        end
-      end
-
-      # Apply custom icon from build.yml (if no deprecated --with-*-icon option used)
-      unless ICONS_CONFIG.keys.any? { |icon| build.with? "#{icon}-icon" }
-        apply_custom_icon(icons_dir)
-      end
+      # Apply custom icon from build.yml
+      apply_custom_icon(icons_dir)
 
       # (prefix/"share/emacs/#{version}").install "lisp"
       prefix.install "nextstep/Emacs.app"
@@ -235,14 +216,6 @@ class EmacsPlusAT29 < EmacsBase
 
       # inject PATH to Info.plist
       inject_path
-
-      # Rename dSYM to match the binary name (Emacs-real) so lldb auto-finds it
-      if build.with? "debug"
-        dsym_path = prefix/"Emacs.app/Contents/MacOS/Emacs.dSYM"
-        if dsym_path.exist?
-          mv dsym_path, prefix/"Emacs.app/Contents/MacOS/Emacs-real.dSYM"
-        end
-      end
 
       # inject description for protected resources usage
       inject_protected_resources_usage_desc

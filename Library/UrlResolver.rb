@@ -1,5 +1,6 @@
-TAP_OWNER = "ryankask"
-TAP_REPO = "emacs-plus"
+# Use defined? to avoid redefinition warnings when file is loaded multiple times
+TAP_OWNER = "ryankask" unless defined?(TAP_OWNER)
+TAP_REPO = "emacs-plus" unless defined?(TAP_REPO)
 
 class UrlResolver
   def initialize(version, mode)
@@ -14,9 +15,5 @@ class UrlResolver
 
   def patch_url name
     "#{@formula_root}/patches/emacs-#@version/#{name}.patch"
-  end
-
-  def icon_url name
-    "#{@formula_root}/icons/#{name}.icns"
   end
 end

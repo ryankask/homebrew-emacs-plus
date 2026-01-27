@@ -24,9 +24,7 @@ module IconApplier
       result = BuildConfig.load_config
       config = result[:config]
 
-      if result[:source]
-        ohai "Loaded build config from: #{result[:source]}"
-      end
+      # Config details are already printed by CaskEnv.inject
 
       icon = BuildConfig.resolve_icon(config)
       unless icon
@@ -99,8 +97,9 @@ module IconApplier
       client_plist = "#{client_app_path}/Contents/Info.plist"
 
       puts "  Updating Emacs Client.app icon..."
-      FileUtils.rm_f("#{client_icons}/Emacs.icns")
-      FileUtils.cp(icon[:path], "#{client_icons}/Emacs.icns")
+      # AppleScript apps use applet.icns, not Emacs.icns
+      FileUtils.rm_f("#{client_icons}/applet.icns")
+      FileUtils.cp(icon[:path], "#{client_icons}/applet.icns")
 
       if icon[:tahoe_path]
         FileUtils.rm_f("#{client_icons}/Assets.car")
