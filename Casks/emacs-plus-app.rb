@@ -1,29 +1,29 @@
 cask "emacs-plus-app" do
   # Version format: <emacs-version>-<build-number>
   # Build number corresponds to GitHub Actions run number
-  version "30.2-70"
+  version "30.2-75"
 
   # Base URL for release assets (versioned releases: cask-30-<build>)
   base_url = "https://github.com/d12frosted/homebrew-emacs-plus/releases/download/cask-30-#{version.sub(/^[\d.]+-/, "")}"
   emacs_ver = version.sub(/-\d+$/, "")
 
   on_intel do
-    sha256 "e0983aea45b3e58df2d3bd166551123eb67e829903ade80b1a45774f974906a3"
+    sha256 "7206ac12c5c664bf59a1cf8b261f548d81ee7daf0c689b2413972c855cfd5364"
     url "#{base_url}/emacs-plus-#{emacs_ver}-x86_64-15.zip",
         verified: "github.com/d12frosted/homebrew-emacs-plus"
   end
 
   on_arm do
     if MacOS.version >= :tahoe # macOS 26
-      sha256 "205aae4bbaae913ca297adf684aaa2bfad4c3a8a3c991b22f4dc0d7b2c438c80"
+      sha256 "330eb8f4135fb5e3f9ecc88f5914ecd4a9aade587f5219e9f697dc7d44e4527d"
       url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-26.zip",
           verified: "github.com/d12frosted/homebrew-emacs-plus"
     elsif MacOS.version >= :sequoia # macOS 15
-      sha256 "e78290053cb6264a199e6e5e5cc0604403e36cb4f62b88e9d928e44afafba0a7"
+      sha256 "43c564914bd7fd9c5495faf11c65a6a60b1ef959c161161ca2628ecd24e2b422"
       url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-15.zip",
           verified: "github.com/d12frosted/homebrew-emacs-plus"
     else # macOS 14 (Sonoma) and 13 (Ventura)
-      sha256 "e84d2cdfc06e4314ffa6e9b0e0e27ca3a0fb89e8fafc56dc0aaaf139744cda7c"
+      sha256 "5fb7e30b9e36bd6737e7e92eb0f305623677b023422996d7eabc027fa06647e3"
       url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-14.zip",
           verified: "github.com/d12frosted/homebrew-emacs-plus"
     end
