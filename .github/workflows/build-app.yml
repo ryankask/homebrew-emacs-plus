@@ -27,8 +27,10 @@ on:
 
 jobs:
   build-30:
-    # Emacs 30 (stable): build on formula/patch changes or manual trigger
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.version == '30')
+    # Emacs 30 (stable): build on formula/patch changes or manual trigger.
+    # Restricted to the upstream repo so forks don't publish releases or
+    # auto-commit cask updates pointing at fork-specific assets.
+    if: github.repository == 'd12frosted/homebrew-emacs-plus' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.version == '30'))
     strategy:
       fail-fast: false
       matrix:
@@ -58,6 +60,11 @@ jobs:
           echo "OS_VER=$(sw_vers -productVersion)" >> $GITHUB_ENV
           echo "OS_NAME=${{ matrix.platform.os_name }}" >> $GITHUB_ENV
           echo "BUILD_DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
+          if [ "${{ matrix.platform.arch }}" = "arm64" ]; then
+            echo "HOMEBREW_PREFIX=/opt/homebrew" >> $GITHUB_ENV
+          else
+            echo "HOMEBREW_PREFIX=/usr/local" >> $GITHUB_ENV
+          fi
 
       - name: Install dependencies
         run: |
@@ -108,6 +115,7 @@ jobs:
           # Note: ImageMagick excluded to avoid libomp conflicts (issue #890)
           ./configure \
             CFLAGS="-DFD_SETSIZE=10000 -DDARWIN_UNLIMITED_SELECT" \
+            --enable-locallisppath=$HOMEBREW_PREFIX/share/emacs/site-lisp \
             --with-ns \
             --with-native-compilation=aot \
             --with-xwidgets \
@@ -401,7 +409,7 @@ jobs:
           echo "OS_MAJOR=$OS_MAJOR" >> $GITHUB_ENV
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: emacs-plus-${{ env.EMACS_FULL_VERSION }}-${{ env.MAC_ARCH }}-${{ env.OS_MAJOR }}
           path: |
@@ -410,8 +418,9 @@ jobs:
             emacs-version.txt
 
   build-31:
-    # Emacs 31 (development): build nightly or on manual trigger
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.version == '31')
+    # Emacs 31 (development): build nightly or on manual trigger.
+    # Restricted to the upstream repo (see build-30).
+    if: github.repository == 'd12frosted/homebrew-emacs-plus' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.version == '31'))
     strategy:
       fail-fast: false
       matrix:
@@ -441,6 +450,11 @@ jobs:
           echo "OS_VER=$(sw_vers -productVersion)" >> $GITHUB_ENV
           echo "OS_NAME=${{ matrix.platform.os_name }}" >> $GITHUB_ENV
           echo "BUILD_DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
+          if [ "${{ matrix.platform.arch }}" = "arm64" ]; then
+            echo "HOMEBREW_PREFIX=/opt/homebrew" >> $GITHUB_ENV
+          else
+            echo "HOMEBREW_PREFIX=/usr/local" >> $GITHUB_ENV
+          fi
 
       - name: Install dependencies
         run: |
@@ -469,6 +483,7 @@ jobs:
             "system-appearance"
             "round-undecorated-frame"
             "mac-font-use-typo-metrics"
+            "fix-ns-x-colors"
           )
           for patch_name in "${PATCHES[@]}"; do
             patch_file="../patches/emacs-$EMACS_VERSION/${patch_name}.patch"
@@ -490,6 +505,7 @@ jobs:
           # Note: ImageMagick excluded to avoid libomp conflicts (issue #890)
           ./configure \
             CFLAGS="-DFD_SETSIZE=10000 -DDARWIN_UNLIMITED_SELECT" \
+            --enable-locallisppath=$HOMEBREW_PREFIX/share/emacs/site-lisp \
             --with-ns \
             --with-native-compilation=aot \
             --with-xwidgets \
@@ -783,7 +799,7 @@ jobs:
           echo "OS_MAJOR=$OS_MAJOR" >> $GITHUB_ENV
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: emacs-plus-${{ env.EMACS_FULL_VERSION }}-${{ env.MAC_ARCH }}-${{ env.OS_MAJOR }}
           path: |
@@ -801,7 +817,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Download artifacts for Emacs 30
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: emacs-plus-30.*
@@ -812,7 +828,7 @@ jobs:
           cat artifacts/*/*.sha256 || echo "No sha256 files found"
 
       - name: Create Release for Emacs 30
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: cask-30-${{ github.run_number }}
           name: Emacs+ 30 Cask Build ${{ github.run_number }}
@@ -901,7 +917,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Download artifacts for Emacs 31
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: emacs-plus-31.*
@@ -912,7 +928,7 @@ jobs:
           cat artifacts/*/*.sha256 || echo "No sha256 files found"
 
       - name: Create Release for Emacs 31
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: cask-31-${{ github.run_number }}
           name: Emacs+ 31 Cask Build ${{ github.run_number }}
