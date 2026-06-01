@@ -282,7 +282,7 @@ If you see the generic AppleScript droplet icon instead of the Emacs icon:
 
 ## Extending to Other Formulas
 
-To add Emacs Client.app to other emacs-plus formulas (e.g., emacs-plus@29, emacs-plus@31), simply call the method after icon installation:
+To add Emacs Client.app to other emacs-plus formulas (e.g., emacs-plus@29, emacs-plus@31, emacs-plus@32), simply call the method after icon installation:
 
 ```ruby
 def install

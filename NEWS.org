@@ -3,6 +3,33 @@
 
 This file documents notable changes to Emacs Plus.
 
+* 2026-05-10
+
+** New Features
+
+*** New formula: emacs-plus@32
+
+A new formula =emacs-plus@32= tracks Emacs =master= (the in-development next major version). It builds with the same default feature set as =emacs-plus@31=: native compilation (AOT), tree-sitter, =gnutls=, =librsvg=, =webp=, =little-cms2=, dynamic modules, and bundles =Emacs.app= + =Emacs Client.app=.
+
+#+begin_src bash
+  brew tap d12frosted/emacs-plus
+  brew install emacs-plus@32
+#+end_src
+
+The =emacs-plus@master= formula alias now points to =emacs-plus@32=, and the =emacs-plus-app@master= cask publishes pre-built =@32= binaries nightly.
+
+** Breaking Changes
+
+*** emacs-plus@31 moved to the =emacs-31= release branch
+
+Now that Emacs 32 development has begun upstream, =emacs-plus@31= builds from the =emacs-31= release branch (version =31.0.60=) instead of =master=. This makes =@31= track the upcoming Emacs 31 release rather than ongoing master development.
+
+If you want the development tip, switch to =emacs-plus@32= or use =emacs-plus@master=.
+
+*** =--with-imagemagick= removed in =emacs-plus@32=
+
+The =--with-imagemagick= option, deprecated in =emacs-plus@31=, is fully removed in =emacs-plus@32=. Modern Emacs has native support for most image formats (SVG via =librsvg=, WebP, PNG, JPEG, GIF). If you rely on ImageMagick, please open an issue describing your use case.
+
 * 2026-01-29
 
 ** New Features

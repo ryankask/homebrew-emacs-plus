@@ -16,13 +16,13 @@ icon: dragon-plus
 ```
 
 This works for both **formula** and **cask** installations:
-- Formula: Icon is applied during `brew install emacs-plus@31 ...`
-- Cask: Icon is applied during `brew install --cask emacs-plus@31`
+- Formula: Icon is applied during `brew install emacs-plus@32 ...`
+- Cask: Icon is applied during `brew install --cask emacs-plus-app@master`
 
 To change icons after installation, update `build.yml` and reinstall:
 ```bash
-brew reinstall emacs-plus@31        # formula
-brew reinstall --cask emacs-plus@31 # cask
+brew reinstall emacs-plus@32              # formula
+brew reinstall --cask emacs-plus-app@master # cask
 ```
 
 ## macOS 26+ (Tahoe) Compliant Icons (2)

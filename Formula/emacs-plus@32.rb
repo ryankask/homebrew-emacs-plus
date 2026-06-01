@@ -1,7 +1,7 @@
 require_relative "../Library/EmacsBase"
 
-class EmacsPlusAT31 < EmacsBase
-  init "31.0.60", branch: "emacs-31"
+class EmacsPlusAT32 < EmacsBase
+  init "32.0.50", branch: "master"
 
   desc "GNU Emacs text editor"
   homepage "https://www.gnu.org/software/emacs/"
@@ -40,7 +40,6 @@ class EmacsPlusAT31 < EmacsBase
   depends_on "little-cms2"
   depends_on "tree-sitter"
   depends_on "webp"
-  depends_on "imagemagick" => :optional
   depends_on "dbus" => :optional
   depends_on "mailutils" => :optional
   # `libgccjit` and `gcc` are required when Emacs compiles `*.elc` files asynchronously (JIT)
@@ -71,11 +70,9 @@ class EmacsPlusAT31 < EmacsBase
   # Patches
   #
 
-  opoo "The option --with-imagemagick is deprecated and will be removed in a future version. Modern Emacs has native support for most image formats (SVG via librsvg, WebP, PNG, JPEG, GIF). If you rely on ImageMagick, please open an issue describing your use case." if build.with? "imagemagick"
   local_patch "fix-ns-x-colors", sha: "9e5d3e26a8d388d3a000b697d582769645ca93ad597b4113744deba4b89a8b9e"
   local_patch "system-appearance", sha: "53283503db5ed2887e9d733baaaf80f2c810e668e782e988bda5855a0b1ebeb4"
   local_patch "round-undecorated-frame", sha: "26947b6724fc29fadd44889808c5cf0b4ce6278cf04f46086a21df50c8c4151d"
-  local_patch "ns-win", sha: "4829dfa8c447b714e010457f2da6b217be98bf53d454802c253bb6ae9da41038"
 
   #
   # Install
@@ -85,7 +82,7 @@ class EmacsPlusAT31 < EmacsBase
     # Check icon options are not used with non-Cocoa builds
     check_icon_compatibility
     # Warn if revision is pinned via config or environment variable
-    check_pinned_revision(31)
+    check_pinned_revision(32)
     # Validate build.yml configuration early to fail fast
     validate_custom_config
 
@@ -95,7 +92,7 @@ class EmacsPlusAT31 < EmacsBase
       --enable-locallisppath=#{HOMEBREW_PREFIX}/share/emacs/site-lisp
       --infodir=#{info}/emacs
       --prefix=#{prefix}
-      --with-native-compilation
+      --with-native-compilation=aot
     ]
 
     args << "--with-xml2"
@@ -134,21 +131,7 @@ class EmacsPlusAT31 < EmacsBase
         "--without-dbus"
       end
 
-    # Note that if ./configure is passed --with-imagemagick but can't find the
-    # library it does not fail but imagemagick support will not be available.
-    # See: https://debbugs.gnu.org/cgi/bugreport.cgi?bug=24455
-    args <<
-      if build.with?("imagemagick")
-        "--with-imagemagick"
-      else
-        "--without-imagemagick"
-      end
-
-    if build.with? "imagemagick"
-      imagemagick_lib_path = Formula["imagemagick"].opt_lib/"pkgconfig"
-      ohai "ImageMagick PKG_CONFIG_PATH: ", imagemagick_lib_path
-      ENV.prepend_path "PKG_CONFIG_PATH", imagemagick_lib_path
-    end
+    args << "--without-imagemagick"
 
     args << "--with-modules"
     args << "--with-rsvg"
@@ -203,7 +186,7 @@ class EmacsPlusAT31 < EmacsBase
       prefix.install "nextstep/Emacs Client.app"
 
       # inject Emacs Plus site-lisp with ns-emacs-plus-version
-      inject_emacs_plus_site_lisp(31)
+      inject_emacs_plus_site_lisp(32)
 
       # inject PATH to Info.plist
       inject_path
@@ -306,7 +289,7 @@ class EmacsPlusAT31 < EmacsBase
 
       If Emacs fails to start with "Library not loaded" errors after upgrading
       dependencies (e.g., tree-sitter, libgccjit), reinstall emacs-plus:
-        brew reinstall emacs-plus@31
+        brew reinstall emacs-plus@32
 
       Report any issues to https://github.com/d12frosted/homebrew-emacs-plus
     EOS
