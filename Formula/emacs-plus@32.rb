@@ -28,7 +28,6 @@ class EmacsPlusAT32 < EmacsBase
   depends_on "gnu-sed" => :build
   depends_on "gnu-tar" => :build
   depends_on "grep" => :build
-  depends_on "awk" => :build
   depends_on "coreutils" => :build
   depends_on "pkg-config" => :build
   depends_on "texinfo" => :build
@@ -72,7 +71,7 @@ class EmacsPlusAT32 < EmacsBase
 
   local_patch "fix-ns-x-colors", sha: "9e5d3e26a8d388d3a000b697d582769645ca93ad597b4113744deba4b89a8b9e"
   local_patch "system-appearance", sha: "53283503db5ed2887e9d733baaaf80f2c810e668e782e988bda5855a0b1ebeb4"
-  local_patch "round-undecorated-frame", sha: "26947b6724fc29fadd44889808c5cf0b4ce6278cf04f46086a21df50c8c4151d"
+  local_patch "round-undecorated-frame", sha: "c9430a1ead81e313b3d2877ff6f8044fb29441eecc7cc42000515d7c8ec6380f"
   local_patch "ns-win", sha: "4829dfa8c447b714e010457f2da6b217be98bf53d454802c253bb6ae9da41038"
 
   #
@@ -193,7 +192,7 @@ class EmacsPlusAT32 < EmacsBase
       inject_path
 
       # inject description for protected resources usage
-      inject_protected_resources_usage_desc
+      inject_plist_extras
 
       # Replace the symlink with one that avoids starting Cocoa.
       # Check multiple locations so users can copy Emacs.app to /Applications

@@ -32,7 +32,6 @@ class EmacsPlusAT28 < EmacsBase
   depends_on "gnu-sed" => :build
   depends_on "gnu-tar" => :build
   depends_on "grep" => :build
-  depends_on "awk" => :build
   depends_on "coreutils" => :build
   depends_on "pkg-config" => :build
   depends_on "texinfo" => :build
@@ -203,7 +202,7 @@ class EmacsPlusAT28 < EmacsBase
       inject_path
 
       # inject description for protected resources usage
-      inject_protected_resources_usage_desc
+      inject_plist_extras
 
       # Replace the symlink with one that avoids starting Cocoa.
       (bin/"emacs").unlink # Kill the existing symlink

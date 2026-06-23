@@ -20,11 +20,14 @@ class EmacsBase < Formula
   def self.init(version_str, sha256: nil, branch: nil)
     major_version = version_str.split(".").first.to_i
     @@urlResolver = UrlResolver.new(major_version, ENV["HOMEBREW_EMACS_PLUS_MODE"] || "remote")
-    # Capture formula_root at class load time (before Homebrew changes working directory)
+    # Derive formula_root from this file's location (Library/..) rather
+    # than Dir.pwd: since Homebrew 5.1.15 formulas are loaded inside the
+    # build sandbox whose working directory is a temporary directory
+    # unrelated to the checkout.
     @@formula_root = begin
       tap = Tap.fetch(TAP_OWNER, TAP_REPO)
       ENV["HOMEBREW_EMACS_PLUS_MODE"] == "local" || !tap.installed? ?
-        Dir.pwd : tap.path.to_s
+        UrlResolver::REPO_ROOT : tap.path.to_s
     end
 
     # Always set explicit version to prevent nil when URL is overridden
@@ -482,13 +485,6 @@ class EmacsBase < Formula
     native_comp_path
   end
 
-  # Find the gcc version number (e.g., "15")
-  def gcc_version
-    Dir.glob("#{HOMEBREW_PREFIX}/bin/gcc-*").map do |path|
-      File.basename(path).sub("gcc-", "")
-    end.select { |v| v.match?(/^\d+$/) }.max
-  end
-
   # Find the directory containing libemutls_w.a
   def find_emutls_dir
     gcc_cellar = "#{HOMEBREW_PREFIX}/Cellar/gcc"
@@ -589,12 +585,15 @@ class EmacsBase < Formula
       system("/usr/libexec/PlistBuddy", "-c", "Add :LSEnvironment:EMACS_PLUS_PATH string '#{path}'", plist)
     end
 
-    # CC and LIBRARY_PATH: Always set for native compilation
-    version = gcc_version
-    if version
-      system("/usr/libexec/PlistBuddy", "-c", "Add :LSEnvironment:CC string '#{HOMEBREW_PREFIX}/bin/gcc-#{version}'", plist)
-    end
-
+    # LIBRARY_PATH: set for native compilation so the libgccjit linker can
+    # find libemutls_w.a when Emacs is launched from the GUI, where the
+    # user's shell environment is absent.
+    #
+    # We intentionally do NOT inject CC. Emacs native compilation never reads
+    # CC (libgccjit resolves its driver via PATH/GCC_EXEC_PREFIX), so setting
+    # it had no effect on compilation while leaking gcc-NN into every child
+    # process spawned by GUI Emacs (terminals, M-x compile, eshell), breaking
+    # builds that expect clang. See issue #939.
     library_path = build_library_path
     unless library_path.empty?
       system("/usr/libexec/PlistBuddy", "-c", "Add :LSEnvironment:LIBRARY_PATH string '#{library_path}'", plist)
@@ -629,8 +628,11 @@ class EmacsBase < Formula
     }
   end
 
-  def inject_protected_resources_usage_desc
-    ohai "Injecting description for protected resources usage"
+  # Inject Emacs Plus customizations into Emacs.app Info.plist: usage
+  # descriptions for protected resources (camera, microphone, speech
+  # recognition) and AutoFill opt-out.
+  def inject_plist_extras
+    ohai "Injecting Info.plist extras"
     app = "#{prefix}/Emacs.app"
     plist = "#{app}/Contents/Info.plist"
 
@@ -640,6 +642,10 @@ class EmacsBase < Formula
     system "/usr/libexec/PlistBuddy -c 'Set NSMicrophoneUsageDescription Emacs requires permission to access the Microphone.' '#{plist}'"
     system "/usr/libexec/PlistBuddy -c 'Add NSSpeechRecognitionUsageDescription string' '#{plist}' || true"
     system "/usr/libexec/PlistBuddy -c 'Set NSSpeechRecognitionUsageDescription Emacs requires permission to handle any speech recognition.' '#{plist}' || true"
+
+    # Prevent macOS from heuristically offering one-time-code AutoFill in Emacs text fields
+    plist_set plist, "NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac", "bool", true
+
     system "touch '#{app}'"
   end
 

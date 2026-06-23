@@ -29,7 +29,6 @@ class EmacsPlusAT30 < EmacsBase
   depends_on "gnu-sed" => :build
   depends_on "gnu-tar" => :build
   depends_on "grep" => :build
-  depends_on "awk" => :build
   depends_on "coreutils" => :build
   depends_on "pkg-config" => :build
   depends_on "texinfo" => :build
@@ -74,7 +73,7 @@ class EmacsPlusAT30 < EmacsBase
 
   local_patch "fix-window-role", sha: "1f8423ea7e6e66c9ac6dd8e37b119972daa1264de00172a24a79a710efcb8130"
   local_patch "system-appearance", sha: "9eb3ce80640025bff96ebaeb5893430116368d6349f4eb0cb4ef8b3d58477db6"
-  local_patch "round-undecorated-frame", sha: "7451f80f559840e54e6a052e55d1100778abc55f98f1d0c038a24e25773f2874"
+  local_patch "round-undecorated-frame", sha: "7e39e694ce9dca50db72c09be442c1278d1900d69c2402f289742aeae8ea4c3e"
   local_patch "fix-macos-tahoe-scrolling", sha: "847a38346c5d917c83ba8c28d63c85006e51e2c0e08c2a2343b3ec9a3f40e380"
   local_patch "fix-ns-x-colors", sha: "9e5d3e26a8d388d3a000b697d582769645ca93ad597b4113744deba4b89a8b9e"
 
@@ -210,7 +209,7 @@ class EmacsPlusAT30 < EmacsBase
       inject_path
 
       # inject description for protected resources usage
-      inject_protected_resources_usage_desc
+      inject_plist_extras
 
       # Replace the symlink with one that avoids starting Cocoa.
       # Check multiple locations so users can copy Emacs.app to /Applications
