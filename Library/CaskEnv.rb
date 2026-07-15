@@ -28,7 +28,8 @@ require_relative 'BuildConfig'
 module CaskEnv
   class << self
     # Inject environment into Emacs.app and Emacs Client.app
-    # Returns true if any modifications were made
+    # Returns true if the bundles may have been modified and the caller
+    # should re-sign them
     def inject(emacs_app, emacs_client_app)
       result = BuildConfig.load_config
       @config = result[:config]
@@ -39,13 +40,28 @@ module CaskEnv
       end
 
       modified = false
-      modified |= inject_emacs_app(emacs_app)
-      modified |= inject_emacs_client_app(emacs_client_app)
-      update_site_start_el(emacs_app)
+      modified |= run_step("Emacs.app environment injection") { inject_emacs_app(emacs_app) }
+      modified |= run_step("Emacs Client.app environment injection") { inject_emacs_client_app(emacs_client_app) }
+      modified |= run_step("site-start.el update") { update_site_start_el(emacs_app) }
       modified
     end
 
     private
+
+    # Run a single injection step, reporting a failure without aborting
+    # the remaining steps. The steps are independent, so a broken one
+    # (e.g. the CLI wrapper failing to write) must not leave the rest of
+    # the install unconfigured, such as site-start.el never being patched.
+    # A failed step returns true: it may have modified the bundle before
+    # raising, and the caller re-signs based on this result, so err on
+    # the side of an extra (harmless) re-sign.
+    def run_step(name)
+      yield
+    rescue StandardError => e
+      message = "#{name} failed: #{e.class}: #{e.message}"
+      defined?(opoo) ? opoo(message) : warn("Warning: #{message}")
+      true
+    end
 
     # Check if user PATH injection is enabled (default: true)
     def inject_path?
@@ -112,12 +128,32 @@ module CaskEnv
       filtered.empty? ? nil : filtered.join(':')
     end
 
+    # Find the versioned gcc driver (gcc-16 etc.) under the gcc opt prefix.
+    # Returns nil when the gcc formula is not installed.
+    def find_gcc_executable
+      Dir.glob("#{homebrew_prefix}/opt/gcc/bin/gcc-*")
+         .select { |p| File.basename(p).match?(/\Agcc-\d+\z/) && File.executable?(p) }
+         .max_by { |p| File.basename(p).delete_prefix("gcc-").to_i }
+    end
+
     # Find the directory containing libemutls_w.a
+    #
+    # Ask gcc itself via -print-file-name: that is the mechanism the
+    # libgccjit driver uses internally, so it is authoritative. A Cellar-wide
+    # glob can pick a stale directory when multiple gcc versions are
+    # installed (PR #963 fixed the same nondeterminism in CI); it remains
+    # only as a last-resort fallback.
     def find_emutls_dir
+      if (gcc = find_gcc_executable)
+        path = IO.popen([gcc, "-print-file-name=libemutls_w.a"], err: File::NULL, &:read).strip
+        # gcc echoes the bare name back when it cannot find the file;
+        # expand_path drops the bin/../lib indirection gcc reports
+        return File.expand_path(File.dirname(path)) if path.include?("/") && File.file?(path)
+      end
+
       gcc_cellar = "#{homebrew_prefix}/Cellar/gcc"
       return nil unless File.directory?(gcc_cellar)
 
-      # Find libemutls_w.a in the gcc installation
       emutls_files = Dir.glob("#{gcc_cellar}/**/libemutls_w.a")
       return nil if emutls_files.empty?
 
@@ -125,6 +161,7 @@ module CaskEnv
     end
 
     # Build LIBRARY_PATH for native compilation
+    # Mirrors the LIBRARY_PATH built in build-app.yml (PR #963)
     def build_library_path
       prefix = homebrew_prefix
       paths = []
@@ -133,8 +170,9 @@ module CaskEnv
       emutls_dir = find_emutls_dir
       paths << emutls_dir if emutls_dir
 
-      # Add gcc library directories
+      # Add gcc and libgccjit library directories
       paths << "#{prefix}/lib/gcc/current"
+      paths << "#{prefix}/opt/libgccjit/lib/gcc/current"
       paths << "#{prefix}/lib"
 
       paths.compact.join(":")
@@ -162,11 +200,16 @@ module CaskEnv
     def inject_emacs_app(app_path)
       return false unless File.exist?(app_path)
 
+      # Create CLI wrapper script for terminal usage. Runs before the
+      # LSEnvironment check so a previously failed wrapper write is
+      # retried on postinstall reruns.
+      wrapper_created = create_cli_wrapper(app_path)
+
       plist = "#{app_path}/Contents/Info.plist"
 
       # Check if already injected
       existing = `defaults read "#{plist}" LSEnvironment 2>/dev/null`.strip
-      return false unless existing.empty? || existing.include?("does not exist")
+      return wrapper_created unless existing.empty? || existing.include?("does not exist")
 
       # Note: For cask, we can only inject native compilation paths (not user PATH)
       # due to Homebrew limitation - cask postflight doesn't have user's shell environment
@@ -190,20 +233,18 @@ module CaskEnv
       # Touch the app to update LaunchServices cache
       system("touch", app_path)
 
-      # Create CLI wrapper script for terminal usage
-      create_cli_wrapper(app_path)
-
       true
     end
 
     # Create a wrapper script at Emacs.app/Contents/MacOS/bin/emacs
     # This fixes the issue where running via symlink breaks Emacs's bundle path resolution
+    # Returns true if the wrapper was written
     def create_cli_wrapper(app_path)
       bin_dir = "#{app_path}/Contents/MacOS/bin"
       wrapper_path = "#{bin_dir}/emacs"
 
       # Skip if wrapper already exists
-      return if File.exist?(wrapper_path) && File.read(wrapper_path).include?("emacs-plus wrapper")
+      return false if File.exist?(wrapper_path) && File.read(wrapper_path).include?("emacs-plus wrapper")
 
       puts "Creating CLI wrapper script at #{wrapper_path}"
 
@@ -216,6 +257,7 @@ module CaskEnv
       SCRIPT
 
       File.chmod(0755, wrapper_path)
+      true
     end
 
     # Inject PATH into Emacs Client.app by recompiling the AppleScript
@@ -318,48 +360,64 @@ module CaskEnv
       true
     end
 
-    # Update site-start.el to add PATH injection code
-    # The CI build creates site-start.el with ns-emacs-plus-version, but
-    # the PATH injection code must be added at user install time since
-    # that's when EMACS_PLUS_PATH is set via LSEnvironment
+    # Update site-start.el with code that must be added at user install
+    # time. The CI build creates site-start.el with ns-emacs-plus-version;
+    # here we add PATH injection (EMACS_PLUS_PATH is set via LSEnvironment
+    # at install time) and native-comp driver options (issue #964). Each
+    # block is added independently so upgrades pick up new blocks even
+    # when older ones are already present.
+    # Returns true if the file was modified (it lives inside the bundle,
+    # so the caller must re-sign)
     def update_site_start_el(app_path)
       site_start = "#{app_path}/Contents/Resources/site-lisp/site-start.el"
-      return unless File.exist?(site_start)
+      return false unless File.exist?(site_start)
 
       content = File.read(site_start)
+      original = content.dup
 
-      # Skip if already has ns-emacs-plus-injected-path
-      return if content.include?("ns-emacs-plus-injected-path")
-
-      # Insert PATH injection code before (provide 'emacs-plus)
+      # PATH injection code before (provide 'emacs-plus)
       # ns-emacs-plus-injected-path is dynamically computed from EMACS_PLUS_PATH
-      new_content = content.sub(
-        "(provide 'emacs-plus)",
-        <<~ELISP.chomp
-          ;; PATH injection via EMACS_PLUS_PATH
-          ;; macOS blocks PATH in LSEnvironment for security reasons, so we store
-          ;; the desired PATH in EMACS_PLUS_PATH and apply it here at startup.
-          (defconst ns-emacs-plus-injected-path
-            (not (null (getenv "EMACS_PLUS_PATH")))
-            "Non-nil if PATH was injected by Emacs Plus at install time.
-          When this is t, you can skip exec-path-from-shell-initialize:
+      unless content.include?("ns-emacs-plus-injected-path")
+        content = content.sub(
+          "(provide 'emacs-plus)",
+          <<~ELISP.chomp
+            ;; PATH injection via EMACS_PLUS_PATH
+            ;; macOS blocks PATH in LSEnvironment for security reasons, so we store
+            ;; the desired PATH in EMACS_PLUS_PATH and apply it here at startup.
+            (defconst ns-emacs-plus-injected-path
+              (not (null (getenv "EMACS_PLUS_PATH")))
+              "Non-nil if PATH was injected by Emacs Plus at install time.
+            When this is t, you can skip exec-path-from-shell-initialize:
 
-            (unless (bound-and-true-p ns-emacs-plus-injected-path)
-              (exec-path-from-shell-initialize))")
+              (unless (bound-and-true-p ns-emacs-plus-injected-path)
+                (exec-path-from-shell-initialize))")
 
-          (when-let ((emacs-plus-path (getenv "EMACS_PLUS_PATH")))
-            ;; Set exec-path for Emacs to find executables
-            (setq exec-path (append (split-string emacs-plus-path ":" t)
-                                    (list exec-directory)))
-            ;; Set PATH in process-environment for subprocesses
-            (setenv "PATH" emacs-plus-path))
+            (when-let ((emacs-plus-path (getenv "EMACS_PLUS_PATH")))
+              ;; Set exec-path for Emacs to find executables
+              (setq exec-path (append (split-string emacs-plus-path ":" t)
+                                      (list exec-directory)))
+              ;; Set PATH in process-environment for subprocesses
+              (setenv "PATH" emacs-plus-path))
 
-          (provide 'emacs-plus)
-        ELISP
-      )
+            (provide 'emacs-plus)
+          ELISP
+        )
+      end
 
-      File.write(site_start, new_content)
-      puts "Updated site-start.el with PATH injection code"
+      # Native-comp driver options so libgccjit can link .eln files on
+      # terminal launches too (issue #964)
+      unless content.include?("native-comp-driver-options")
+        content = content.sub(
+          "(provide 'emacs-plus)",
+          "#{BuildConfig.native_comp_driver_options_el(homebrew_prefix).chomp}\n\n(provide 'emacs-plus)"
+        )
+      end
+
+      return false if content == original
+
+      File.write(site_start, content)
+      puts "Updated site-start.el"
+      true
     end
 
     # Escape a string for embedding in an AppleScript double-quoted string

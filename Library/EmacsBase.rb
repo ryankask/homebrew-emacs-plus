@@ -81,17 +81,10 @@ class EmacsBase < Formula
     begin
       result = BuildConfig.load_config
       config = result[:config]
-      return nil unless config["revision"]
 
-      revision = config["revision"]
-      # Support both: revision: "abc" (single) or revision: { "30": "abc" } (versioned)
-      if revision.is_a?(Hash)
-        # Try both string and integer keys
-        revision[version.to_s] || revision[version]
-      else
-        # Single revision applies to all versions (not recommended but supported)
-        revision
-      end
+      # Supports: revision: "abc" (single, applies to all versions) or
+      # revision: { "default": "abc", "30": "def" } (version map)
+      BuildConfig.resolve_versioned(config["revision"], version)
     rescue BuildConfig::ConfigurationError
       # Silently ignore - error will be shown with full context during formula run
       nil
@@ -142,16 +135,26 @@ class EmacsBase < Formula
     @@formula_root
   end
 
+  # Major Emacs version ("30", "31", ...) used to resolve version-mapped
+  # build.yml values (icon, patches, revision)
+  def major_version
+    version.to_s.split(".").first
+  end
+
   def resolve_patches
     return [] unless custom_config["patches"]
 
-    custom_config["patches"].map do |patch_ref|
+    custom_config["patches"].filter_map do |patch_ref|
       case patch_ref
       when String
         resolve_registry_patch(patch_ref)
       when Hash
         name = patch_ref.keys.first
-        spec = patch_ref[name]
+        spec = BuildConfig.resolve_versioned(patch_ref[name], major_version)
+        if spec.nil?
+          puts "  Skipping #{name} (not configured for Emacs #{major_version})"
+          next
+        end
         odie "External patch '#{name}' requires 'url' and 'sha256'" unless spec["url"] && spec["sha256"]
         url = spec["url"]
         if local_path?(url)
@@ -209,9 +212,9 @@ class EmacsBase < Formula
   end
 
   def resolve_icon
-    return nil unless custom_config["icon"]
+    icon_ref = BuildConfig.resolve_versioned(custom_config["icon"], major_version)
+    return nil unless icon_ref
 
-    icon_ref = custom_config["icon"]
     case icon_ref
     when String
       resolve_registry_icon(icon_ref)
@@ -245,9 +248,9 @@ class EmacsBase < Formula
     # Check if icon is configured for non-Cocoa builds
     return if (build.with? "cocoa") && (build.without? "x11")
 
-    # Check for icon in build.yml config
-    config = custom_config
-    if config["icon"]
+    # Check for icon in build.yml config (resolved for this version, so a
+    # version map that has no icon for this build does not trigger the error)
+    if BuildConfig.resolve_versioned(custom_config["icon"], major_version)
       odie "Icon configuration in build.yml is not compatible with --with-x11 or --without-cocoa. " \
            "These build configurations do not produce Emacs.app."
     end
@@ -257,11 +260,7 @@ class EmacsBase < Formula
     # Check for revision from build.yml config
     config = custom_config
     if config["revision"]
-      revision = if config["revision"].is_a?(Hash)
-        config["revision"][version.to_s] || config["revision"][version]
-      else
-        config["revision"]
-      end
+      revision = BuildConfig.resolve_versioned(config["revision"], version)
 
       if revision
         ohai "Building from pinned revision (via build.yml)"
@@ -299,9 +298,16 @@ class EmacsBase < Formula
     # Here we do additional formula-specific validation (e.g., icon exists in registry)
     errors = []
 
-    # Validate icon exists in registry (if it's a string reference)
-    if config["icon"].is_a?(String)
-      name = config["icon"]
+    # Validate icon exists in registry (string references, including
+    # string values inside a version map)
+    icon_names = if BuildConfig.version_map?(config["icon"])
+      config["icon"].values.grep(String)
+    elsif config["icon"].is_a?(String)
+      [config["icon"]]
+    else
+      []
+    end
+    icon_names.each do |name|
       unless registry.dig("icons", name)
         errors << "Unknown icon '#{name}'. Check community/registry.json for available icons."
       end
@@ -443,7 +449,7 @@ class EmacsBase < Formula
   # Call this from post_install to re-apply icon from build.yml
   def apply_icon_post_install
     require_relative 'IconApplier'
-    IconApplier.apply(prefix/"Emacs.app", prefix/"Emacs Client.app")
+    IconApplier.apply(prefix/"Emacs.app", prefix/"Emacs Client.app", version: major_version)
   end
 
   # ============================================================
@@ -485,8 +491,29 @@ class EmacsBase < Formula
     native_comp_path
   end
 
+  # Find the versioned gcc driver (gcc-16 etc.) under the gcc opt prefix.
+  # Returns nil when the gcc formula is not installed.
+  def find_gcc_executable
+    Dir.glob("#{HOMEBREW_PREFIX}/opt/gcc/bin/gcc-*")
+       .select { |p| File.basename(p).match?(/\Agcc-\d+\z/) && File.executable?(p) }
+       .max_by { |p| File.basename(p).delete_prefix("gcc-").to_i }
+  end
+
   # Find the directory containing libemutls_w.a
+  #
+  # Ask gcc itself via -print-file-name: that is the mechanism the
+  # libgccjit driver uses internally, so it is authoritative. A Cellar-wide
+  # glob can pick a stale directory when multiple gcc versions are
+  # installed (PR #963 fixed the same nondeterminism in CI); it remains
+  # only as a last-resort fallback.
   def find_emutls_dir
+    if (gcc = find_gcc_executable)
+      path = IO.popen([gcc, "-print-file-name=libemutls_w.a"], err: File::NULL, &:read).strip
+      # gcc echoes the bare name back when it cannot find the file;
+      # expand_path drops the bin/../lib indirection gcc reports
+      return File.expand_path(File.dirname(path)) if path.include?("/") && File.file?(path)
+    end
+
     gcc_cellar = "#{HOMEBREW_PREFIX}/Cellar/gcc"
     return nil unless File.directory?(gcc_cellar)
 
@@ -497,6 +524,7 @@ class EmacsBase < Formula
   end
 
   # Build LIBRARY_PATH for native compilation
+  # Mirrors the LIBRARY_PATH built in build-app.yml (PR #963)
   def build_library_path
     paths = []
 
@@ -504,8 +532,9 @@ class EmacsBase < Formula
     emutls_dir = find_emutls_dir
     paths << emutls_dir if emutls_dir
 
-    # Add gcc library directories
+    # Add gcc and libgccjit library directories
     paths << "#{HOMEBREW_PREFIX}/lib/gcc/current"
+    paths << "#{HOMEBREW_PREFIX}/opt/libgccjit/lib/gcc/current"
     paths << "#{HOMEBREW_PREFIX}/lib"
 
     paths.compact.join(":")
@@ -554,6 +583,8 @@ class EmacsBase < Formula
                                   (list exec-directory)))
           ;; Set PATH in process-environment for subprocesses
           (setenv "PATH" emacs-plus-path))
+
+        #{BuildConfig.native_comp_driver_options_el(HOMEBREW_PREFIX).chomp}
 
         (provide 'emacs-plus)
 

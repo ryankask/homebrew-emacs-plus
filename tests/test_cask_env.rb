@@ -36,6 +36,7 @@ class TestCaskEnv < Minitest::Test
   def teardown
     # Clean up environment
     ENV.delete("HOMEBREW_EMACS_PLUS_BUILD_CONFIG")
+    ENV.delete("HOMEBREW_PREFIX")
   end
 
   # ===========================================
@@ -354,7 +355,7 @@ class TestCaskEnv < Minitest::Test
     end
   end
 
-  def test_update_site_start_el_skips_if_already_has_variable
+  def test_update_site_start_el_does_not_duplicate_path_injection
     Dir.mktmpdir do |dir|
       app_path = "#{dir}/Emacs.app"
       site_lisp = "#{app_path}/Contents/Resources/site-lisp"
@@ -372,8 +373,68 @@ class TestCaskEnv < Minitest::Test
       CaskEnv.instance_variable_set(:@config, { "inject_path" => true })
       CaskEnv.send(:update_site_start_el, app_path)
 
-      # Content should be unchanged
-      assert_equal original_content, File.read("#{site_lisp}/site-start.el")
+      content = File.read("#{site_lisp}/site-start.el")
+
+      # PATH injection block must not be added again, but the driver
+      # options block (issue #964) must be added independently
+      assert_equal 1, content.scan("ns-emacs-plus-injected-path").length
+      assert_includes content, "native-comp-driver-options"
+    end
+  end
+
+  def test_update_site_start_el_adds_native_comp_driver_options
+    Dir.mktmpdir do |dir|
+      app_path = "#{dir}/Emacs.app"
+      site_lisp = "#{app_path}/Contents/Resources/site-lisp"
+      FileUtils.mkdir_p(site_lisp)
+
+      File.write("#{site_lisp}/site-start.el", <<~ELISP)
+        ;;; site-start.el --- Emacs Plus site initialization -*- lexical-binding: t -*-
+
+        (defconst ns-emacs-plus-version 30
+          "Major version of Emacs Plus.")
+
+        (provide 'emacs-plus)
+
+        ;;; site-start.el ends here
+      ELISP
+
+      Hardware::CPU.mock_arm = true
+      CaskEnv.instance_variable_set(:@config, { "inject_path" => true })
+      CaskEnv.send(:update_site_start_el, app_path)
+
+      content = File.read("#{site_lisp}/site-start.el")
+
+      # Driver options block resolves gcc at startup and adds -L flags
+      assert_includes content, "native-comp-driver-options"
+      assert_includes content, "-print-file-name=libemutls_w.a"
+      assert_includes content, "native-comp-available-p"
+      assert_includes content, "/opt/homebrew/opt/gcc/bin/gcc-[0-9]*"
+      assert_includes content, "/opt/homebrew/lib/gcc/current"
+      # Block must come before provide so it runs when the file loads
+      assert_operator content.index("native-comp-driver-options"), :<,
+                      content.index("(provide 'emacs-plus)")
+    end
+  end
+
+  def test_update_site_start_el_is_idempotent
+    Dir.mktmpdir do |dir|
+      app_path = "#{dir}/Emacs.app"
+      site_lisp = "#{app_path}/Contents/Resources/site-lisp"
+      FileUtils.mkdir_p(site_lisp)
+
+      File.write("#{site_lisp}/site-start.el", <<~ELISP)
+        ;;; site-start.el
+        (defconst ns-emacs-plus-version 30)
+        (provide 'emacs-plus)
+      ELISP
+
+      CaskEnv.instance_variable_set(:@config, { "inject_path" => true })
+      CaskEnv.send(:update_site_start_el, app_path)
+      first = File.read("#{site_lisp}/site-start.el")
+
+      CaskEnv.send(:update_site_start_el, app_path)
+      assert_equal first, File.read("#{site_lisp}/site-start.el")
     end
   end
 
@@ -384,7 +445,146 @@ class TestCaskEnv < Minitest::Test
 
       # Should not raise error
       CaskEnv.instance_variable_set(:@config, { "inject_path" => true })
-      CaskEnv.send(:update_site_start_el, app_path)
+      assert_equal false, CaskEnv.send(:update_site_start_el, app_path)
+    end
+  end
+
+  def test_update_site_start_el_returns_whether_it_modified
+    Dir.mktmpdir do |dir|
+      app_path = "#{dir}/Emacs.app"
+      site_lisp = "#{app_path}/Contents/Resources/site-lisp"
+      FileUtils.mkdir_p(site_lisp)
+
+      File.write("#{site_lisp}/site-start.el", <<~ELISP)
+        ;;; site-start.el
+        (defconst ns-emacs-plus-version 30)
+        (provide 'emacs-plus)
+      ELISP
+
+      CaskEnv.instance_variable_set(:@config, { "inject_path" => true })
+      assert_equal true, CaskEnv.send(:update_site_start_el, app_path)
+      # Second run changes nothing
+      assert_equal false, CaskEnv.send(:update_site_start_el, app_path)
+    end
+  end
+
+  # ===========================================
+  # Tests for inject step isolation
+  # ===========================================
+
+  # Point config loading at a nonexistent file so inject uses an empty
+  # config instead of whatever the developer has in ~/.config/emacs-plus
+  def with_empty_build_config
+    ENV["HOMEBREW_EMACS_PLUS_BUILD_CONFIG"] = "/nonexistent/build.yml"
+    yield
+  ensure
+    ENV.delete("HOMEBREW_EMACS_PLUS_BUILD_CONFIG")
+  end
+
+  def make_site_start(dir)
+    app_path = "#{dir}/Emacs.app"
+    site_lisp = "#{app_path}/Contents/Resources/site-lisp"
+    FileUtils.mkdir_p(site_lisp)
+    File.write("#{site_lisp}/site-start.el", <<~ELISP)
+      ;;; site-start.el
+      (defconst ns-emacs-plus-version 30)
+      (provide 'emacs-plus)
+    ELISP
+    app_path
+  end
+
+  def test_inject_continues_when_a_step_fails
+    Dir.mktmpdir do |dir|
+      app_path = make_site_start(dir)
+
+      # Simulate create_cli_wrapper blowing up inside inject_emacs_app
+      # (e.g. Contents/MacOS/bin missing)
+      boom = ->(_path) { raise Errno::ENOENT, "#{app_path}/Contents/MacOS/bin/emacs" }
+
+      with_empty_build_config do
+        CaskEnv.stub(:inject_emacs_app, boom) do
+          # The failure is reported (on stderr) but must not raise out of inject
+          assert_output(nil, /Emacs\.app.*failed.*ENOENT/mi) do
+            CaskEnv.inject(app_path, "#{dir}/Emacs Client.app")
+          end
+        end
+      end
+
+      # Later steps must still run: site-start.el gets patched
+      content = File.read("#{app_path}/Contents/Resources/site-lisp/site-start.el")
+      assert_includes content, "ns-emacs-plus-injected-path"
+      assert_includes content, "native-comp-driver-options"
+    end
+  end
+
+  def test_inject_requests_resign_when_a_step_fails
+    # A failed step may have modified the bundle before raising (e.g. the
+    # plist written but the CLI wrapper not), and the cask re-signs based
+    # on inject's return value, so a failure must report true
+    Dir.mktmpdir do |dir|
+      app_path = make_site_start(dir)
+
+      boom = ->(_path) { raise Errno::ENOENT, "no such file" }
+
+      with_empty_build_config do
+        CaskEnv.stub(:inject_emacs_app, boom) do
+          needs_resign = nil
+          assert_output(nil, /failed/i) do
+            needs_resign = CaskEnv.inject(app_path, "#{dir}/Emacs Client.app")
+          end
+          assert_equal true, needs_resign
+        end
+      end
+    end
+  end
+
+  def test_inject_requests_resign_when_only_site_start_changed
+    # site-start.el lives inside the bundle, so updating it invalidates
+    # the code seal just like the plist steps do; inject must report it
+    Dir.mktmpdir do |dir|
+      app_path = make_site_start(dir)
+
+      with_empty_build_config do
+        CaskEnv.stub(:inject_emacs_app, false) do
+          CaskEnv.stub(:inject_emacs_client_app, false) do
+            assert_equal true, CaskEnv.inject(app_path, "#{dir}/Emacs Client.app")
+          end
+        end
+      end
+    end
+  end
+
+  def test_inject_survives_real_cli_wrapper_failure
+    # End-to-end version of the motivating failure: an Emacs.app without
+    # Contents/MacOS/bin makes create_cli_wrapper hit a genuine
+    # Errno::ENOENT inside the real inject_emacs_app
+    Dir.mktmpdir do |dir|
+      app_path = make_site_start(dir)
+
+      with_empty_build_config do
+        with_fake_prefix do
+          assert_output(nil, /ENOENT/i) do
+            assert_equal true, CaskEnv.inject(app_path, "#{dir}/Emacs Client.app")
+          end
+        end
+      end
+
+      content = File.read("#{app_path}/Contents/Resources/site-lisp/site-start.el")
+      assert_includes content, "ns-emacs-plus-injected-path"
+      assert_includes content, "native-comp-driver-options"
+    end
+  end
+
+  def test_create_cli_wrapper_reports_whether_it_wrote
+    Dir.mktmpdir do |dir|
+      app_path = "#{dir}/Emacs.app"
+      FileUtils.mkdir_p("#{app_path}/Contents/MacOS/bin")
+
+      assert_output(/Creating CLI wrapper/) do
+        assert_equal true, CaskEnv.send(:create_cli_wrapper, app_path)
+      end
+      # Second run is a no-op
+      assert_equal false, CaskEnv.send(:create_cli_wrapper, app_path)
     end
   end
 
@@ -415,6 +615,131 @@ class TestCaskEnv < Minitest::Test
     CaskEnv.stub(:build_library_path, "") do
       env = CaskEnv.send(:native_comp_env)
       refute_includes env.keys, "LIBRARY_PATH"
+    end
+  end
+
+  # ===========================================
+  # Tests for gcc-based emutls lookup (PR #963 ported to install-time injection)
+  # ===========================================
+
+  # Run a block with HOMEBREW_PREFIX pointing at a fresh tempdir
+  def with_fake_prefix
+    Dir.mktmpdir do |dir|
+      ENV["HOMEBREW_PREFIX"] = dir
+      yield dir
+    ensure
+      ENV.delete("HOMEBREW_PREFIX")
+    end
+  end
+
+  # Create a fake versioned gcc driver that answers -print-file-name with
+  # the given output (gcc echoes the bare file name back when it cannot
+  # find the requested library)
+  def make_fake_gcc(prefix, version, output)
+    bin = File.join(prefix, "opt/gcc/bin")
+    FileUtils.mkdir_p(bin)
+    gcc = File.join(bin, "gcc-#{version}")
+    File.write(gcc, "#!/bin/sh\necho '#{output}'\n")
+    File.chmod(0o755, gcc)
+    gcc
+  end
+
+  def make_cellar_emutls(prefix, gcc_version)
+    lib_dir = File.join(prefix, "Cellar/gcc/#{gcc_version}/lib/gcc/current/gcc/aarch64-apple-darwin24/#{gcc_version.split('.').first}")
+    FileUtils.mkdir_p(lib_dir)
+    File.write(File.join(lib_dir, "libemutls_w.a"), "")
+    lib_dir
+  end
+
+  def test_find_gcc_executable_returns_nil_without_gcc
+    with_fake_prefix do
+      assert_nil CaskEnv.send(:find_gcc_executable)
+    end
+  end
+
+  def test_find_gcc_executable_picks_highest_version
+    with_fake_prefix do |prefix|
+      make_fake_gcc(prefix, 15, "")
+      gcc16 = make_fake_gcc(prefix, 16, "")
+      assert_equal gcc16, CaskEnv.send(:find_gcc_executable)
+    end
+  end
+
+  def test_find_gcc_executable_ignores_non_driver_binaries
+    with_fake_prefix do |prefix|
+      gcc = make_fake_gcc(prefix, 16, "")
+      # gcc-ar-16 style wrappers must not be picked up as the driver
+      ar = File.join(File.dirname(gcc), "gcc-ar-16")
+      File.write(ar, "#!/bin/sh\n")
+      File.chmod(0o755, ar)
+      assert_equal gcc, CaskEnv.send(:find_gcc_executable)
+    end
+  end
+
+  def test_find_emutls_dir_uses_gcc_print_file_name
+    with_fake_prefix do |prefix|
+      lib_dir = make_cellar_emutls(prefix, "16.1.0")
+      make_fake_gcc(prefix, 16, File.join(lib_dir, "libemutls_w.a"))
+      assert_equal lib_dir, CaskEnv.send(:find_emutls_dir)
+    end
+  end
+
+  def test_find_emutls_dir_normalizes_gcc_answer
+    with_fake_prefix do |prefix|
+      lib_dir = make_cellar_emutls(prefix, "16.1.0")
+      # gcc reports the path relative to its bin dir, e.g. .../bin/../lib/...
+      cellar = File.join(prefix, "Cellar/gcc/16.1.0")
+      unresolved = File.join(cellar, "bin/..", lib_dir.delete_prefix("#{cellar}/"), "libemutls_w.a")
+      FileUtils.mkdir_p(File.join(cellar, "bin"))
+      make_fake_gcc(prefix, 16, unresolved)
+      assert_equal lib_dir, CaskEnv.send(:find_emutls_dir)
+    end
+  end
+
+  def test_find_emutls_dir_prefers_gcc_answer_over_glob
+    with_fake_prefix do |prefix|
+      # Two gcc versions in the Cellar: the glob could pick either, but the
+      # driver's own answer must win
+      make_cellar_emutls(prefix, "15.2.0")
+      current = make_cellar_emutls(prefix, "16.1.0")
+      make_fake_gcc(prefix, 16, File.join(current, "libemutls_w.a"))
+      assert_equal current, CaskEnv.send(:find_emutls_dir)
+    end
+  end
+
+  def test_find_emutls_dir_falls_back_to_glob_when_gcc_cannot_find_it
+    with_fake_prefix do |prefix|
+      # gcc echoes the bare name back when it cannot find the library
+      make_fake_gcc(prefix, 16, "libemutls_w.a")
+      lib_dir = make_cellar_emutls(prefix, "16.1.0")
+      assert_equal lib_dir, CaskEnv.send(:find_emutls_dir)
+    end
+  end
+
+  def test_find_emutls_dir_falls_back_to_glob_without_gcc
+    with_fake_prefix do |prefix|
+      lib_dir = make_cellar_emutls(prefix, "16.1.0")
+      assert_equal lib_dir, CaskEnv.send(:find_emutls_dir)
+    end
+  end
+
+  def test_find_emutls_dir_returns_nil_when_not_found
+    with_fake_prefix do
+      assert_nil CaskEnv.send(:find_emutls_dir)
+    end
+  end
+
+  def test_build_library_path_order_and_contents
+    with_fake_prefix do |prefix|
+      lib_dir = make_cellar_emutls(prefix, "16.1.0")
+      make_fake_gcc(prefix, 16, File.join(lib_dir, "libemutls_w.a"))
+      parts = CaskEnv.send(:build_library_path).split(":")
+      # Mirrors the LIBRARY_PATH built in build-app.yml (PR #963):
+      # emutls dir first, then gcc, libgccjit and prefix lib dirs
+      assert_equal [lib_dir,
+                    "#{prefix}/lib/gcc/current",
+                    "#{prefix}/opt/libgccjit/lib/gcc/current",
+                    "#{prefix}/lib"], parts
     end
   end
 

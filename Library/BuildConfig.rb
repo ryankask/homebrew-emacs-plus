@@ -16,6 +16,15 @@ module BuildConfig
   CASK_KEYS = %w[icon inject_path].freeze
   ALL_KEYS = (FORMULA_KEYS + CASK_KEYS).uniq.freeze
 
+  # Keys of an external resource spec ({url, sha256}). A hash whose keys are
+  # a subset of these is a spec; any other hash is a version map keyed by
+  # major Emacs version (or "default"). A version key is never literally
+  # "url" or "sha256", so the two shapes cannot collide.
+  SPEC_KEYS = %w[url sha256].freeze
+
+  # Valid version map key: "default" or a major Emacs version like "30"/30
+  VERSION_KEY = /\A\d+\z/
+
   class << self
     def tap_path
       @tap_path ||= File.expand_path('..', __dir__)
@@ -68,6 +77,77 @@ module BuildConfig
 
       validate_config!(config, path)
       config
+    end
+
+    # True if value is an external resource spec: {url, sha256}
+    def external_spec?(value)
+      value.is_a?(Hash) && !value.empty? && (value.keys.map(&:to_s) - SPEC_KEYS).empty?
+    end
+
+    # True if value is a version map: a hash keyed by major version/"default"
+    def version_map?(value)
+      value.is_a?(Hash) && !external_spec?(value)
+    end
+
+    # Resolve a possibly version-mapped value for a major Emacs version.
+    # Plain values (string, spec hash, nil) pass through unchanged.
+    # For a version map: exact version match wins, then "default", else nil.
+    # Handles both string and integer keys/versions ("30" vs 30).
+    def resolve_versioned(value, version)
+      return value unless version_map?(value)
+
+      version = version&.to_s
+      exact = value.keys.find { |k| k.to_s == version }
+      return value[exact] if exact
+
+      default = value.keys.find { |k| k.to_s == "default" }
+      default ? value[default] : nil
+    end
+
+    # Elisp block for site-start.el that lets the libgccjit driver link
+    # .eln files no matter how Emacs was launched (issue #964).
+    #
+    # LIBRARY_PATH injected via LSEnvironment reaches GUI launches only, so
+    # a terminal-launched Emacs with a cold eln-cache fails at the link step
+    # ("ld: library 'emutls_w' not found"). Driver options are passed only
+    # to libgccjit, so unlike setenv they do not leak into child processes
+    # of Emacs (issue #939). The gcc paths are resolved at Emacs startup, so
+    # they survive gcc version bumps without a reinstall.
+    def native_comp_driver_options_el(prefix)
+      <<~ELISP
+        ;; Native compilation: pass gcc library dirs to the libgccjit driver
+        ;; so it can link .eln files (ld needs libemutls_w.a and friends).
+        ;; LIBRARY_PATH from LSEnvironment covers GUI launches only, so a
+        ;; terminal-launched Emacs with a cold eln-cache fails to link
+        ;; without this. Driver options reach only libgccjit, so unlike
+        ;; setenv they do not leak into child processes of Emacs.
+        (when (and (fboundp 'native-comp-available-p)
+                   (native-comp-available-p))
+          (let* ((gcc (car (last (sort (file-expand-wildcards
+                                        "#{prefix}/opt/gcc/bin/gcc-[0-9]*")
+                                       #'string-version-lessp))))
+                 (emutls (when gcc
+                           (with-temp-buffer
+                             (when (eql 0 (ignore-errors
+                                            (call-process
+                                             gcc nil t nil
+                                             "-print-file-name=libemutls_w.a")))
+                               (string-trim (buffer-string))))))
+                 (dirs (list (when (and emutls (string-match-p "/" emutls))
+                               (directory-file-name
+                                (expand-file-name (file-name-directory emutls))))
+                             "#{prefix}/lib/gcc/current"
+                             "#{prefix}/opt/libgccjit/lib/gcc/current"
+                             "#{prefix}/lib")))
+            (unless (boundp 'native-comp-driver-options)
+              (setq native-comp-driver-options nil))
+            (dolist (dir dirs)
+              (when dir
+                (let ((flag (concat "-L" dir)))
+                  (unless (member flag native-comp-driver-options)
+                    (setq native-comp-driver-options
+                          (append native-comp-driver-options (list flag)))))))))
+      ELISP
     end
 
     # Validate that config has the expected structure
@@ -129,6 +209,25 @@ module BuildConfig
     end
 
     def validate_icon!(icon, path)
+      # An empty hash is neither a usable spec nor a version map; let the
+      # spec validator produce the "url and sha256 required" error for it
+      if version_map?(icon) && !icon.empty?
+        validate_version_map_keys!(icon, "icon", path)
+        icon.each do |ver, spec|
+          if version_map?(spec)
+            raise ConfigurationError,
+              "Invalid 'icon.#{ver}' in #{path}\n" \
+              "Version maps cannot be nested.\n" \
+              "Got: #{spec.inspect}"
+          end
+          validate_icon_spec!(spec, path, key: "icon.#{ver}")
+        end
+      else
+        validate_icon_spec!(icon, path)
+      end
+    end
+
+    def validate_icon_spec!(icon, path, key: "icon")
       case icon
       when String, nil
         # Valid: icon name from registry or no icon
@@ -136,16 +235,27 @@ module BuildConfig
       when Hash
         unless icon["url"] && icon["sha256"]
           raise ConfigurationError,
-            "Invalid 'icon' configuration in #{path}\n" \
+            "Invalid '#{key}' configuration in #{path}\n" \
             "When specifying an external icon, both 'url' and 'sha256' are required.\n" \
             "Got: #{icon.inspect}"
         end
       else
         raise ConfigurationError,
-          "Invalid 'icon' in #{path}\n" \
+          "Invalid '#{key}' in #{path}\n" \
           "Expected: string (icon name) or object with 'url' and 'sha256'\n" \
           "Got: #{icon.inspect} (#{icon.class})"
       end
+    end
+
+    # Validate that all keys of a version map are major versions or "default"
+    def validate_version_map_keys!(map, key, path)
+      bad = map.keys.reject { |k| k.to_s == "default" || k.to_s.match?(VERSION_KEY) }
+      return if bad.empty?
+
+      raise ConfigurationError,
+        "Invalid '#{key}' version map in #{path}\n" \
+        "Version keys must be major Emacs versions (e.g. \"30\") or 'default'.\n" \
+        "Got key(s): #{bad.map(&:inspect).join(', ')}"
     end
 
     def validate_inject_path!(value, path)
@@ -158,16 +268,48 @@ module BuildConfig
     end
 
     def validate_patches!(patches, path)
-      return if patches.is_a?(Array)
+      unless patches.is_a?(Array)
+        raise ConfigurationError,
+          "Invalid 'patches' in #{path}\n" \
+          "Expected: array of patch names\n" \
+          "Got: #{patches.inspect} (#{patches.class})\n\n" \
+          "Example:\n" \
+          "  patches:\n" \
+          "    - frame-transparency\n" \
+          "    - aggressive-read-buffering"
+      end
+
+      patches.each do |entry|
+        case entry
+        when String
+          # Valid: patch name from registry
+        when Hash
+          entry.each do |name, value|
+            if version_map?(value) && !value.empty?
+              validate_version_map_keys!(value, "patches.#{name}", path)
+              value.each do |ver, spec|
+                validate_patch_spec!(spec, path, key: "patches.#{name}.#{ver}")
+              end
+            else
+              validate_patch_spec!(value, path, key: "patches.#{name}")
+            end
+          end
+        else
+          raise ConfigurationError,
+            "Invalid 'patches' entry in #{path}\n" \
+            "Expected: patch name (string) or named patch with 'url' and 'sha256'\n" \
+            "Got: #{entry.inspect} (#{entry.class})"
+        end
+      end
+    end
+
+    def validate_patch_spec!(spec, path, key:)
+      return if spec.is_a?(Hash) && spec["url"] && spec["sha256"]
 
       raise ConfigurationError,
-        "Invalid 'patches' in #{path}\n" \
-        "Expected: array of patch names\n" \
-        "Got: #{patches.inspect} (#{patches.class})\n\n" \
-        "Example:\n" \
-        "  patches:\n" \
-        "    - frame-transparency\n" \
-        "    - aggressive-read-buffering"
+        "Invalid '#{key}' in #{path}\n" \
+        "External and local patches require both 'url' and 'sha256'.\n" \
+        "Got: #{spec.inspect}"
     end
 
     def validate_revision!(revision, path)
@@ -180,6 +322,7 @@ module BuildConfig
             "Got: #{revision.inspect}"
         end
       when Hash
+        validate_version_map_keys!(revision, "revision", path)
         revision.each do |ver, rev|
           unless rev.is_a?(String) && rev.match?(/\A[a-f0-9]+\z/i)
             raise ConfigurationError,
@@ -212,17 +355,22 @@ module BuildConfig
 
       output.call "Build configuration:"
       config.each do |key, value|
-        formatted_value = case value
-        when Hash then value.map { |k, v| "#{k}: #{v}" }.join(", ")
-        when Array then value.join(", ")
-        else value.to_s
-        end
-        output.call "  #{key}: #{formatted_value}"
+        output.call "  #{key}: #{format_config_value(value)}"
       end
 
       # Context-specific warnings
       warnings = context_warnings(config, context)
       warnings.each { |w| output.call "  ⚠ #{w}" }
+    end
+
+    # Format a config value for display, flattening nested hashes
+    # (external specs and version maps) into a compact one-line form
+    def format_config_value(value)
+      case value
+      when Hash then value.map { |k, v| "#{k}: #{format_config_value(v)}" }.join(", ")
+      when Array then value.map { |v| format_config_value(v) }.join(", ")
+      else value.to_s
+      end
     end
 
     # Get warnings for keys that don't apply to the current context
@@ -248,12 +396,14 @@ module BuildConfig
     end
 
     # Resolve an icon from build.yml configuration
-    # Returns nil if no icon configured
+    # Supports a plain spec (name or {url, sha256}) or a version map
+    # ({default: spec, "30": spec, ...}); version is the major Emacs version.
+    # Returns nil if no icon configured (or none for this version)
     # Returns hash with :name, :path, :tahoe_path, :type, :metadata, or :url/:sha256 for external
-    def resolve_icon(config)
-      return nil unless config["icon"]
+    def resolve_icon(config, version: nil)
+      icon_ref = resolve_versioned(config["icon"], version)
+      return nil unless icon_ref
 
-      icon_ref = config["icon"]
       case icon_ref
       when String
         resolve_registry_icon(icon_ref)

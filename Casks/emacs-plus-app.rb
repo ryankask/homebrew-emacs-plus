@@ -1,29 +1,29 @@
 cask "emacs-plus-app" do
   # Version format: <emacs-version>-<build-number>
   # Build number corresponds to GitHub Actions run number
-  version "30.2-215"
+  version "30.2-260"
 
   # Base URL for release assets (versioned releases: cask-30-<build>)
   base_url = "https://github.com/d12frosted/homebrew-emacs-plus/releases/download/cask-30-#{version.sub(/^[\d.]+-/, "")}"
   emacs_ver = version.sub(/-\d+$/, "")
 
   on_intel do
-    sha256 "9042d85cf11fd2750b8d487e2f6da6de08cb0509b911472d99f7a1d713c7a142"
+    sha256 "e5fc27dc09124e05a956c04f6424148c4b1b78b5d72eb223608de8d8eedef11d"
     url "#{base_url}/emacs-plus-#{emacs_ver}-x86_64-15.zip",
         verified: "github.com/d12frosted/homebrew-emacs-plus"
   end
 
   on_arm do
     if MacOS.version >= :tahoe # macOS 26
-      sha256 "8c113e58cad3253f1e0481b01652fc14b0477718c54587d9c6c3b8791d509fcf"
+      sha256 "b9ed82fc5355e899592e832b48ca32625e806f2a51e3b830de8d4dc5b26cc78e"
       url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-26.zip",
           verified: "github.com/d12frosted/homebrew-emacs-plus"
     elsif MacOS.version >= :sequoia # macOS 15
-      sha256 "e1c9e77bc6c2de81c811b7762e11f9199b939032f7fec083998a14b1f105455a"
+      sha256 "29b8ee02fc5e83801d0e337f38036ba803204ddf0cd8b3bbd1d9b0445a8b5a8b"
       url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-15.zip",
           verified: "github.com/d12frosted/homebrew-emacs-plus"
     else # macOS 14 (Sonoma) and 13 (Ventura)
-      sha256 "8734e9ebdb71e25e9b7a32cc68d4cfb1c87349d66d86b32cabd5b7c22748348f"
+      sha256 "80d4e3a2ad7e01261ba28b443c3ea4440d3b13481125999a7d25189ba0273d70"
       url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-14.zip",
           verified: "github.com/d12frosted/homebrew-emacs-plus"
     end
@@ -67,7 +67,7 @@ cask "emacs-plus-app" do
 
     # Apply custom icon from ~/.config/emacs-plus/build.yml if configured
     load "#{tap.path}/Library/IconApplier.rb"
-    needs_resign = IconApplier.apply("#{appdir}/Emacs.app", "#{appdir}/Emacs Client.app") || needs_resign
+    needs_resign = IconApplier.apply("#{appdir}/Emacs.app", "#{appdir}/Emacs Client.app", version: version.major) || needs_resign
 
     if needs_resign
       # Re-sign after modifications
