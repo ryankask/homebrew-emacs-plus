@@ -38,8 +38,13 @@ jobs:
       - name: Test installation
         run: $(brew --prefix)/bin/emacs --batch --eval='(print (+ 2 2))'
 
+      # The .pdmp dump file bakes in the build-time PATH, which includes
+      # Homebrew's shim dir under /opt/homebrew/Library — unrelocatable by
+      # design. Skip relocation: runner and target machines both use
+      # /opt/homebrew, so fixed paths are correct. (Intel /usr/local
+      # prefixes would not be able to pour this bottle.)
       - name: Create bottle
-        run: brew bottle ryankask/emacs-plus/emacs-plus@32
+        run: brew bottle --skip-relocation ryankask/emacs-plus/emacs-plus@32
 
       - name: Upload bottle to release
         env:
