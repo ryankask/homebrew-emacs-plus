@@ -1,0 +1,67 @@
+name: Build Bottle
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  bottle:
+    runs-on: macos-latest
+
+    steps:
+      # The runner image ships a stale Homebrew, while formula metadata
+      # comes fresh from the JSON API. When homebrew-core starts using a
+      # feature the bundled brew does not know yet (e.g. the install
+      # steps framework), dependency installation fails with errors like
+      # "unknown install step: gdk_pixbuf_query_loaders".
+      - name: Update Homebrew
+        run: brew update
+
+      - name: Tap this repository
+        run: brew tap ryankask/emacs-plus
+
+      # Homebrew now refuses to load formulae from third-party taps unless
+      # they are explicitly trusted ("Refusing to load formula ... from
+      # untrusted tap"). Trust our own tap so install can proceed in CI.
+      - name: Trust tap
+        run: brew trust ryankask/emacs-plus
+
+      - name: Build emacs-plus@32
+        run: |
+          export HOMEBREW_DEVELOPER=1
+          brew install --build-bottle ryankask/emacs-plus/emacs-plus@32 --verbose
+
+      - name: Test installation
+        run: $(brew --prefix)/bin/emacs --batch --eval='(print (+ 2 2))'
+
+      - name: Create bottle
+        run: brew bottle ryankask/emacs-plus/emacs-plus@32
+
+      - name: Upload bottle to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create emacs-plus-32-nightly \
+            --title "emacs-plus@32 nightly bottle" \
+            --notes "Automated bottle build of emacs-plus@32 (Emacs master)." || true
+          gh release upload emacs-plus-32-nightly emacs-plus@32--*.bottle.tar.gz --clobber
+
+      - name: Pack up build logs
+        if: always()
+        run: |
+          LOG_DIR=~/Library/Logs/Homebrew/emacs-plus@32
+          if [ -d "$LOG_DIR" ]; then
+            tar -C "$LOG_DIR" -czvf emacs-plus@32-build.tar.gz .
+          fi
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-logs
+          path: emacs-plus@32-build.tar.gz
+          if-no-files-found: ignore
