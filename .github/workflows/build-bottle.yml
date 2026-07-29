@@ -38,6 +38,40 @@ jobs:
       - name: Test installation
         run: $(brew --prefix)/bin/emacs --batch --eval='(print (+ 2 2))'
 
+      # Emacs bakes its build-time PATH into the binary .pdmp dump file.
+      # Under Homebrew's build sandbox that PATH includes the shim directory
+      # under /opt/homebrew/Library, and `brew bottle` hard-fails when a keg
+      # contains any reference to Homebrew's Library directory (the check
+      # cannot be bypassed; --skip-relocation only skips the softer
+      # prefix/cellar checks). The dumped value is dead data at runtime —
+      # Emacs re-initializes exec-path and process-environment at startup —
+      # so rewrite it in place with an equal-length, NUL-padded benign path.
+      - name: Scrub build-time PATH from Emacs dump
+        run: |
+          KEG="$(brew --prefix ryankask/emacs-plus/emacs-plus@32)"
+          ruby - "$KEG" <<'RUBY'
+            keg = ARGV[0]
+            needle = "/opt/homebrew/Library/Homebrew/shims/mac/super"
+            replacement = "/opt/homebrew/bin".ljust(needle.length, "\0")
+            scrubbed = false
+            Dir.glob(File.join(keg, "**", "*.pdmp")).each do |pdmp|
+              data = File.binread(pdmp)
+              next unless data.include?(needle)
+              mode = File.stat(pdmp).mode
+              File.chmod(0o644, pdmp)
+              # Block form of gsub: NUL bytes in a replacement string would
+              # otherwise be interpreted as backreferences.
+              File.binwrite(pdmp, data.gsub(needle) { replacement })
+              File.chmod(mode, pdmp)
+              puts "scrubbed #{pdmp}"
+              scrubbed = true
+            end
+            abort "error: no pdmp contained '#{needle}'" unless scrubbed
+          RUBY
+
+      - name: Re-test installation after scrub
+        run: $(brew --prefix)/bin/emacs --batch --eval='(print (+ 2 2))'
+
       # The .pdmp dump file bakes in the build-time PATH, which includes
       # Homebrew's shim dir under /opt/homebrew/Library — unrelocatable by
       # design. Skip relocation: runner and target machines both use
