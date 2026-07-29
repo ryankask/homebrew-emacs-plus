@@ -80,14 +80,28 @@ jobs:
       - name: Create bottle
         run: brew bottle --skip-relocation ryankask/emacs-plus/emacs-plus@32
 
+      # Also upload as a run artifact so a build can be tested from the
+      # Actions page without waiting on release mechanics.
+      - name: Upload bottle as artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: bottle
+          path: emacs-plus@32--*.bottle*.tar.gz
+          if-no-files-found: ignore
+
       - name: Upload bottle to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create emacs-plus-32-nightly \
+            --repo ${{ github.repository }} \
+            --target main \
             --title "emacs-plus@32 nightly bottle" \
             --notes "Automated bottle build of emacs-plus@32 (Emacs master)." || true
-          gh release upload emacs-plus-32-nightly emacs-plus@32--*.bottle.tar.gz --clobber
+          # Note the .bottle*.tar.gz glob: the filename includes a rebuild
+          # component (.bottle.1.tar.gz) when nonzero.
+          gh release upload emacs-plus-32-nightly emacs-plus@32--*.bottle*.tar.gz \
+            --repo ${{ github.repository }} --clobber
 
       - name: Pack up build logs
         if: always()
