@@ -13,6 +13,9 @@ jobs:
     runs-on: macos-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
       # The runner image ships a stale Homebrew, while formula metadata
       # comes fresh from the JSON API. When homebrew-core starts using a
       # feature the bundled brew does not know yet (e.g. the install
@@ -75,10 +78,13 @@ jobs:
       # The .pdmp dump file bakes in the build-time PATH, which includes
       # Homebrew's shim dir under /opt/homebrew/Library — unrelocatable by
       # design. Skip relocation: runner and target machines both use
-      # /opt/homebrew, so fixed paths are correct. (Intel /usr/local
-      # prefixes would not be able to pour this bottle.)
+      # /opt/homebrew, so fixed paths are correct. --json gives us the
+      # bottle tag and sha256 needed to update the formula's bottle block.
       - name: Create bottle
-        run: brew bottle --skip-relocation ryankask/emacs-plus/emacs-plus@32
+        run: |
+          brew bottle --json --skip-relocation ryankask/emacs-plus/emacs-plus@32
+          echo "BOTTLE_TAG=$(jq -r '.[].bottle.tags | keys[0]' ./emacs-plus@32--*.json)" >> "$GITHUB_ENV"
+          echo "BOTTLE_SHA256=$(jq -r '.[].bottle.tags[].sha256' ./emacs-plus@32--*.json)" >> "$GITHUB_ENV"
 
       # Also upload as a run artifact so a build can be tested from the
       # Actions page without waiting on release mechanics.
@@ -93,6 +99,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Homebrew constructs bottle download URLs with a single dash
+          # (name-version...), unlike the double-dash local filename
+          # produced by `brew bottle`.
+          for f in emacs-plus@32--*.bottle*.tar.gz; do
+            mv "$f" "${f/--/-}"
+          done
           gh release create emacs-plus-32-nightly \
             --repo ${{ github.repository }} \
             --target main \
@@ -100,8 +112,25 @@ jobs:
             --notes "Automated bottle build of emacs-plus@32 (Emacs master)." || true
           # Note the .bottle*.tar.gz glob: the filename includes a rebuild
           # component (.bottle.1.tar.gz) when nonzero.
-          gh release upload emacs-plus-32-nightly emacs-plus@32--*.bottle*.tar.gz \
+          gh release upload emacs-plus-32-nightly emacs-plus@32-*.bottle*.tar.gz \
             --repo ${{ github.repository }} --clobber
+
+      # The bottle block in Formula/emacs-plus@32.rb is a fork-only addition
+      # pointing at the fixed release tag above; keep its sha256 current.
+      - name: Commit updated bottle sha256
+        run: |
+          ruby - Formula/emacs-plus@32.rb <<'RUBY'
+            path = ARGV[0]
+            line = %(sha256 cellar: :any_skip_relocation, #{ENV.fetch("BOTTLE_TAG")}: "#{ENV.fetch("BOTTLE_SHA256")}")
+            updated = File.read(path).gsub(/sha256 cellar: :any_skip_relocation, \w+: "[0-9a-f]{64}"/, line)
+            abort "error: bottle sha256 line not found in #{path}" if updated == File.read(path)
+            File.write(path, updated)
+          RUBY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/emacs-plus@32.rb
+          git diff --cached --quiet || git commit -m "chore: update emacs-plus@32 nightly bottle sha256"
+          git push
 
       - name: Pack up build logs
         if: always()
