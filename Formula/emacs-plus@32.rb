@@ -14,7 +14,7 @@ class EmacsPlusAT32 < EmacsBase
   bottle do
     root_url "https://github.com/ryankask/homebrew-emacs-plus/releases/download/emacs-plus-32-nightly"
     rebuild 1
-    sha256 cellar: :any_skip_relocation, arm64_tahoe: "8bd88b19ac7e9d9e2f394e9e2064f55b15b383d30cfc9c5adcf95400fe3340c9"
+    sha256 cellar: :any_skip_relocation, arm64_tahoe: "b7506048fd89fabd2e6cd4242519cba8a072e6366b5e3d4a546c46e7ce52eef8"
   end
 
   #
