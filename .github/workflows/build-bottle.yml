@@ -107,7 +107,7 @@ jobs:
           done
           gh release create emacs-plus-32-nightly \
             --repo ${{ github.repository }} \
-            --target main \
+            --target nightly \
             --title "emacs-plus@32 nightly bottle" \
             --notes "Automated bottle build of emacs-plus@32 (Emacs master)." || true
           # Note the .bottle*.tar.gz glob: the filename includes a rebuild
@@ -115,22 +115,54 @@ jobs:
           gh release upload emacs-plus-32-nightly emacs-plus@32-*.bottle*.tar.gz \
             --repo ${{ github.repository }} --clobber
 
-      # The bottle block in Formula/emacs-plus@32.rb is a fork-only addition
-      # pointing at the fixed release tag above; keep its sha256 current.
-      - name: Commit updated bottle sha256
+      # The bottle block lives on the `nightly` branch only (the fork's
+      # default branch), so the tap serves it and `brew update` picks it
+      # up. `main` stays free of bot commits for clean upstream merges.
+      # Each run rebuilds `nightly` from `origin/main` plus a freshly
+      # injected bottle block, then force-pushes: a single rolling commit,
+      # no history spam, no merge conflicts.
+      - name: Rebuild nightly branch
         run: |
+          # Fetch all branches (checkout only fetches the default branch).
+          git fetch origin '+refs/heads/*:refs/remotes/origin/*'
+
+          # Reset the nightly branch to current main (no bottle block).
+          git checkout --force -B nightly origin/main
+
+          # Inject the fork-only bottle block after the `homepage` line.
+          # Idempotent: replace an existing block if present (e.g. if main
+          # still carried one), otherwise insert a fresh one.
           ruby - Formula/emacs-plus@32.rb <<'RUBY'
             path = ARGV[0]
-            line = %(sha256 cellar: :any_skip_relocation, #{ENV.fetch("BOTTLE_TAG")}: "#{ENV.fetch("BOTTLE_SHA256")}")
-            updated = File.read(path).gsub(/sha256 cellar: :any_skip_relocation, \w+: "[0-9a-f]{64}"/, line)
-            abort "error: bottle sha256 line not found in #{path}" if updated == File.read(path)
+            tag = ENV.fetch("BOTTLE_TAG")
+            sha = ENV.fetch("BOTTLE_SHA256")
+            block = "  # Fork-only addition (not in upstream): pour the CI-built nightly\n" \
+                    "  # bottle from this fork's fixed release tag. The sha256 is updated\n" \
+                    "  # by the build-bottle workflow on each build. Workbrew on the\n" \
+                    "  # target machine blocks installing bottles from local paths/URLs,\n" \
+                    "  # so a proper bottle block is the only pour channel available.\n" \
+                    "  bottle do\n" \
+                    "    root_url \"https://github.com/ryankask/homebrew-emacs-plus/releases/download/emacs-plus-32-nightly\"\n" \
+                    "    rebuild 1\n" \
+                    "    sha256 cellar: :any_skip_relocation, #{tag}: \"#{sha}\"\n" \
+                    "  end\n"
+            src = File.read(path)
+            marker = 'root_url "https://github.com/ryankask/homebrew-emacs-plus/releases/download/emacs-plus-32-nightly"'
+            updated =
+              if src.include?(marker)
+                src.sub(/  # Fork-only addition.*?^  end\n/m, block)
+              else
+                src.sub(/homepage "https:\/\/www\.gnu\.org\/software\/emacs\/"\n\n/) { |m| m + block }
+              end
+            abort "error: failed to inject bottle block into #{path}" if updated == src
             File.write(path, updated)
           RUBY
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula/emacs-plus@32.rb
-          git diff --cached --quiet || git commit -m "chore: update emacs-plus@32 nightly bottle sha256"
-          git push
+          git commit -m "chore: update emacs-plus@32 nightly bottle sha256"
+          git push --force-with-lease origin nightly
 
       - name: Pack up build logs
         if: always()
