@@ -17,9 +17,19 @@ class EmacsBase < Formula
     revision_from_config(major_version) || ENV["HOMEBREW_EMACS_PLUS_#{major_version}_REVISION"]
   end
 
+  # Capture the injected PATH at class-definition time, before Homebrew's
+  # superenv sandbox scrubs the environment. CI bottle builds set
+  # HOMEBREW_EMACS_PLUS_INJECT_PATH to a literal PATH value; by the time
+  # install runs inside the sandbox the env var is gone, so we must
+  # snapshot it here alongside HOMEBREW_EMACS_PLUS_MODE.
+  def self.injected_path
+    @@injected_path
+  end
+
   def self.init(version_str, sha256: nil, branch: nil)
     major_version = version_str.split(".").first.to_i
     @@urlResolver = UrlResolver.new(major_version, ENV["HOMEBREW_EMACS_PLUS_MODE"] || "remote")
+    @@injected_path = ENV["HOMEBREW_EMACS_PLUS_INJECT_PATH"]
     # Derive formula_root from this file's location (Library/..) rather
     # than Dir.pwd: since Homebrew 5.1.15 formulas are loaded inside the
     # build sandbox whose working directory is a temporary directory
@@ -481,7 +491,7 @@ class EmacsBase < Formula
   # HOMEBREW_EMACS_PLUS_INJECT_PATH overrides ORIGINAL_PATHS (used by CI for bottles).
   def build_path
     if inject_path?
-      user_path = ENV["HOMEBREW_EMACS_PLUS_INJECT_PATH"] || PATH.new(ORIGINAL_PATHS).to_s
+      user_path = self.class.injected_path || PATH.new(ORIGINAL_PATHS).to_s
       if user_path && !user_path.empty?
         user_parts = user_path.split(':')
         native_parts = native_comp_path.split(':')
