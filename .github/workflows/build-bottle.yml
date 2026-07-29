@@ -2,6 +2,11 @@ name: Build Bottle
 
 on:
   workflow_dispatch:
+    inputs:
+      inject_path:
+        description: "Literal PATH value to bake into the bottle's EMACS_PLUS_PATH"
+        required: false
+        default: "/Users/ryan.k/.config/herd-lite/bin:/Users/ryan.k/.local/bin:/Users/ryan.k/go/bin:/Users/ryan.k/.cargo/bin:/Users/ryan.k/.cabal/bin:/Users/ryan.k/.ghcup/bin:/opt/local/google-cloud-sdk/bin:/opt/workbrew/bin:/opt/homebrew/opt/coreutils/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/pkg/env/global/bin:/Applications/kitty.app/Contents/MacOS:/Users/ryan.k/.orbstack/bin"
   schedule:
     - cron: "0 3 * * *"
 
@@ -37,6 +42,17 @@ jobs:
       # untrusted tap"). Trust our own tap so install can proceed in CI.
       - name: Trust tap
         run: brew trust ryankask/emacs-plus
+
+      # Bake a literal PATH into the bottle's EMACS_PLUS_PATH. Configurable
+      # via the workflow_dispatch input (GitHub Actions "Run workflow" UI);
+      # scheduled runs use the default. Without this override, the bottle
+      # would bake in the CI runner's default PATH (cargo, Android SDK,
+      # dotnet, Python framework, etc.) via ORIGINAL_PATHS.
+      - name: Set PATH to inject into bottle
+        run: |
+          INJECT_PATH="${{ inputs.inject_path }}"
+          : "${INJECT_PATH:=/Users/ryan.k/.config/herd-lite/bin:/Users/ryan.k/.local/bin:/Users/ryan.k/go/bin:/Users/ryan.k/.cargo/bin:/Users/ryan.k/.cabal/bin:/Users/ryan.k/.ghcup/bin:/opt/local/google-cloud-sdk/bin:/opt/workbrew/bin:/opt/homebrew/opt/coreutils/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/pkg/env/global/bin:/Applications/kitty.app/Contents/MacOS:/Users/ryan.k/.orbstack/bin}"
+          echo "HOMEBREW_EMACS_PLUS_INJECT_PATH=$INJECT_PATH" >> "$GITHUB_ENV"
 
       - name: Build emacs-plus@32
         run: |
