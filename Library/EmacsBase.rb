@@ -478,9 +478,10 @@ class EmacsBase < Formula
 
   # Build the full PATH value for injection
   # User PATH comes first (preserving order), native comp paths appended if missing
+  # HOMEBREW_EMACS_PLUS_INJECT_PATH overrides ORIGINAL_PATHS (used by CI for bottles).
   def build_path
     if inject_path?
-      user_path = PATH.new(ORIGINAL_PATHS).to_s
+      user_path = ENV["HOMEBREW_EMACS_PLUS_INJECT_PATH"] || PATH.new(ORIGINAL_PATHS).to_s
       if user_path && !user_path.empty?
         user_parts = user_path.split(':')
         native_parts = native_comp_path.split(':')
