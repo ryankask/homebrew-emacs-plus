@@ -6,6 +6,17 @@ class EmacsPlusAT32 < EmacsBase
   desc "GNU Emacs text editor"
   homepage "https://www.gnu.org/software/emacs/"
 
+  # Fork-only addition (not in upstream): pour the CI-built nightly bottle
+  # from this fork's fixed release tag. The sha256 is updated by the
+  # build-bottle workflow on each build. Workbrew on the target machine
+  # blocks installing bottles from local paths/URLs, so a proper bottle
+  # block is the only pour channel available there.
+  bottle do
+    root_url "https://github.com/ryankask/homebrew-emacs-plus/releases/download/emacs-plus-32-nightly"
+    rebuild 1
+    sha256 cellar: :any_skip_relocation, arm64_tahoe: "8bd88b19ac7e9d9e2f394e9e2064f55b15b383d30cfc9c5adcf95400fe3340c9"
+  end
+
   #
   # Options
   #
