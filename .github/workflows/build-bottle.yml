@@ -82,7 +82,7 @@ jobs:
       # bottle tag and sha256 needed to update the formula's bottle block.
       - name: Create bottle
         run: |
-          brew bottle --json --skip-relocation ryankask/emacs-plus/emacs-plus@32
+          brew bottle --json --no-rebuild --skip-relocation ryankask/emacs-plus/emacs-plus@32
           echo "BOTTLE_TAG=$(jq -r '.[].bottle.tags | keys[0]' ./emacs-plus@32--*.json)" >> "$GITHUB_ENV"
           echo "BOTTLE_SHA256=$(jq -r '.[].bottle.tags[].sha256' ./emacs-plus@32--*.json)" >> "$GITHUB_ENV"
 
@@ -110,8 +110,9 @@ jobs:
             --target nightly \
             --title "emacs-plus@32 nightly bottle" \
             --notes "Automated bottle build of emacs-plus@32 (Emacs master)." || true
-          # Note the .bottle*.tar.gz glob: the filename includes a rebuild
-          # component (.bottle.1.tar.gz) when nonzero.
+          # --no-rebuild forces rebuild 0, so the filename is always
+          # .bottle.tar.gz (no numeric suffix); --clobber overwrites the
+          # single asset each run instead of accumulating versions.
           gh release upload emacs-plus-32-nightly emacs-plus@32-*.bottle*.tar.gz \
             --repo ${{ github.repository }} --clobber
 
@@ -143,7 +144,6 @@ jobs:
                     "  # so a proper bottle block is the only pour channel available.\n" \
                     "  bottle do\n" \
                     "    root_url \"https://github.com/ryankask/homebrew-emacs-plus/releases/download/emacs-plus-32-nightly\"\n" \
-                    "    rebuild 1\n" \
                     "    sha256 cellar: :any_skip_relocation, #{tag}: \"#{sha}\"\n" \
                     "  end\n"
             src = File.read(path)
