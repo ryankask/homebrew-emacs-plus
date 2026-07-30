@@ -39,7 +39,11 @@ class EmacsPlusAT32 < EmacsBase
   depends_on "grep" => :build
   depends_on "coreutils" => :build
   depends_on "pkg-config" => :build
-  depends_on "texinfo" => :build
+  # Fork-only: texinfo is a *runtime* dependency because post_install calls
+  # install-info. Upstream marks it :build-only, which breaks on bottle pours
+  # (pours never install :build deps, so install-info is missing and
+  # post_install aborts before the icon re-apply and codesign steps).
+  depends_on "texinfo"
   depends_on "xz" => :build
   depends_on "m4" => :build
   depends_on "sqlite" => :build
@@ -101,7 +105,7 @@ class EmacsPlusAT32 < EmacsBase
       --enable-locallisppath=#{HOMEBREW_PREFIX}/share/emacs/site-lisp
       --infodir=#{info}/emacs
       --prefix=#{prefix}
-      --with-native-compilation
+      --with-native-compilation=aot
     ]
 
     args << "--with-xml2"
