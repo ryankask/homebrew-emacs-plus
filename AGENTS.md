@@ -5,8 +5,12 @@
 Personal fork of [d12frosted/homebrew-emacs-plus](https://github.com/d12frosted/homebrew-emacs-plus)
 (`ryankask/homebrew-emacs-plus`).
 
-- Default branch is `nightly` — it carries the fork's bottle block and bot commits.
-- `main` tracks upstream and stays free of bot commits so upstream merges stay clean.
+- Default branch is `nightly` — it carries the fork's bottle block and bot
+  commits. It is CI-managed: do not commit to it locally (a local
+  `pre-commit` hook in `.git/hooks` blocks this); the `build-bottle.yml`
+  workflow merges `main` into it and bumps the bottle sha256.
+- `main` carries the fork's changes and stays free of bot commits so
+  upstream merges stay clean.
 
 ## CI: only `build-bottle.yml` is used
 
@@ -34,3 +38,9 @@ remove the release-upload steps from `build-bottle.yml`, and never delete the
 super-key (`s-*`) bindings from `ns-win.el` so Command keys are free for user
 configuration. If a patch file under `patches/` changes, its sha256 in the
 formula's `local_patch` line must be updated to match.
+
+The formula also makes `texinfo` a **runtime** dependency (upstream has it as
+`:build`-only). `post_install` calls `install-info`, which comes from texinfo,
+and bottle pours never install `:build` deps — with a build-only texinfo,
+`post_install` aborts on the first `install-info` call, skipping the icon
+re-apply and codesign re-signing steps that follow it.
