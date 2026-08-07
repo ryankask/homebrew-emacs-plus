@@ -13,7 +13,7 @@ class EmacsPlusAT32 < EmacsBase
   # so a proper bottle block is the only pour channel available.
   bottle do
     root_url "https://github.com/ryankask/homebrew-emacs-plus/releases/download/emacs-plus-32-nightly"
-    sha256 cellar: :any_skip_relocation, arm64_tahoe: "0be0026d322a7f894ce4574d3ff8ae615a5734c8ac33744bd9ea2a82ff46ddad"
+    sha256 cellar: :any_skip_relocation, arm64_tahoe: "bee902376d7d00a714052e3da27fa8f29e80c9e99da4801f1f8a9822c539b6b6"
   end
   #
   # Options
