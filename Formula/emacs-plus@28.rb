@@ -64,25 +64,30 @@ class EmacsPlusAT28 < EmacsBase
   # Incompatible options
   #
 
-  if build.with? "xwidgets"
-    unless (build.with? "cocoa") && (build.without? "x11")
-      odie "--with-xwidgets is not available when building --with-x11"
-    end
+  if build.with?("xwidgets") && !((build.with? "cocoa") && (build.without? "x11"))
+    odie "--with-xwidgets is not available when building --with-x11"
   end
 
-  if build.with? "no-titlebar"
-    if build.with? "no-titlebar-and-round-corners"
-      odie "--with-no-titlebar and --with-no-titlebar-and-round-corners are mutually exclusive"
-    end
+  if build.with?("no-titlebar") && build.with?("no-titlebar-and-round-corners")
+    odie "--with-no-titlebar and --with-no-titlebar-and-round-corners are mutually exclusive"
   end
 
   #
   # Patches
   #
 
-  local_patch "no-titlebar", sha: "2fa80efc5cda7e96d88a5d145c9313092a6e53d38825c41967c745f08778c41b" if build.with? "no-titlebar"
-  local_patch "no-titlebar-and-round-corners", sha: "ba7606186fe1b9e675147fed2c8080efa2824dc6679f6a9550b792533aec98be" if build.with? "no-titlebar-and-round-corners"
-  local_patch "no-frame-refocus-cocoa", sha: "fb5777dc890aa07349f143ae65c2bcf43edad6febfd564b01a2235c5a15fcabd" if build.with? "no-frame-refocus"
+  if build.with? "no-titlebar"
+    local_patch "no-titlebar",
+                sha: "2fa80efc5cda7e96d88a5d145c9313092a6e53d38825c41967c745f08778c41b"
+  end
+  if build.with? "no-titlebar-and-round-corners"
+    local_patch "no-titlebar-and-round-corners",
+                sha: "ba7606186fe1b9e675147fed2c8080efa2824dc6679f6a9550b792533aec98be"
+  end
+  if build.with? "no-frame-refocus"
+    local_patch "no-frame-refocus-cocoa",
+                sha: "fb5777dc890aa07349f143ae65c2bcf43edad6febfd564b01a2235c5a15fcabd"
+  end
   local_patch "fix-window-role", sha: "1f8423ea7e6e66c9ac6dd8e37b119972daa1264de00172a24a79a710efcb8130"
   local_patch "system-appearance", sha: "d6ee159839b38b6af539d7b9bdff231263e451c1fd42eec0d125318c9db8cd92"
 
@@ -105,9 +110,7 @@ class EmacsPlusAT28 < EmacsBase
     args << "--with-native-compilation" if build.with? "native-comp"
 
     # Enable debug symbols in Homebrew's superenv
-    if build.with? "debug"
-      ENV.set_debug_symbols
-    end
+    ENV.set_debug_symbols if build.with? "debug"
 
     # Build CFLAGS - pass to configure for includes and defines
     # Note: Homebrew's superenv handles optimization (-O2) and debug (-g) flags
@@ -149,7 +152,7 @@ class EmacsPlusAT28 < EmacsBase
       end
 
     if build.with? "imagemagick"
-      imagemagick_lib_path = Formula["imagemagick"].opt_lib/"pkgconfig"
+      imagemagick_lib_path = Utils::Path.formula_opt_lib("imagemagick")/"pkgconfig"
       ohai "ImageMagick PKG_CONFIG_PATH: ", imagemagick_lib_path
       ENV.prepend_path "PKG_CONFIG_PATH", imagemagick_lib_path
     end
@@ -174,18 +177,14 @@ class EmacsPlusAT28 < EmacsBase
                                    .gsub("#define HAVE_DECL_ALIGNED_ALLOC 1", "#undef HAVE_DECL_ALIGNED_ALLOC")
                                    .gsub("#define HAVE_ALLOCA 1", "#undef HAVE_ALLOCA")
                                    .gsub("#define HAVE_ALLOCA_H 1", "#undef HAVE_ALLOCA_H")
-        File.open("src/config.h", "w") do |f|
-          f.write(configure_h_filtered)
-        end
+        File.write("src/config.h", configure_h_filtered)
       end
 
       system "gmake"
 
       # Generate dSYM bundle for debugging BEFORE install (clang stores symbols
       # in .o files, and dsymutil needs them to extract debug info)
-      if build.with? "debug"
-        system "dsymutil", "nextstep/Emacs.app/Contents/MacOS/Emacs"
-      end
+      system "dsymutil", "nextstep/Emacs.app/Contents/MacOS/Emacs" if build.with? "debug"
 
       system "gmake", "install"
 
@@ -233,17 +232,13 @@ class EmacsPlusAT28 < EmacsBase
                                    .gsub("#define HAVE_DECL_ALIGNED_ALLOC 1", "#undef HAVE_DECL_ALIGNED_ALLOC")
                                    .gsub("#define HAVE_ALLOCA 1", "#undef HAVE_ALLOCA")
                                    .gsub("#define HAVE_ALLOCA_H 1", "#undef HAVE_ALLOCA_H")
-        File.open("src/config.h", "w") do |f|
-          f.write(configure_h_filtered)
-        end
+        File.write("src/config.h", configure_h_filtered)
       end
 
       system "gmake"
 
       # Generate dSYM bundle for debugging BEFORE install (non-Cocoa build)
-      if build.with? "debug"
-        system "dsymutil", "src/emacs"
-      end
+      system "dsymutil", "src/emacs" if build.with? "debug"
 
       system "gmake", "install"
     end
@@ -295,8 +290,8 @@ class EmacsPlusAT28 < EmacsBase
   service do
     run [opt_bin/"emacs", "--fg-daemon"]
     keep_alive true
-    log_path "/tmp/homebrew.mxcl.emacs-plus.stdout.log"
-    error_log_path "/tmp/homebrew.mxcl.emacs-plus.stderr.log"
+    log_path var/"log/emacs-plus@28.stdout.log"
+    error_log_path var/"log/emacs-plus@28.stderr.log"
   end
 
   test do

@@ -66,17 +66,18 @@ class EmacsPlusAT29 < EmacsBase
   # Incompatible options
   #
 
-  if build.with? "xwidgets"
-    unless (build.with? "cocoa") && (build.without? "x11")
-      odie "--with-xwidgets is not available when building --with-x11"
-    end
+  if build.with?("xwidgets") && !((build.with? "cocoa") && (build.without? "x11"))
+    odie "--with-xwidgets is not available when building --with-x11"
   end
 
   #
   # Patches
   #
 
-  local_patch "no-frame-refocus-cocoa", sha: "fb5777dc890aa07349f143ae65c2bcf43edad6febfd564b01a2235c5a15fcabd" if build.with? "no-frame-refocus"
+  if build.with? "no-frame-refocus"
+    local_patch "no-frame-refocus-cocoa",
+                sha: "fb5777dc890aa07349f143ae65c2bcf43edad6febfd564b01a2235c5a15fcabd"
+  end
   local_patch "fix-window-role", sha: "1f8423ea7e6e66c9ac6dd8e37b119972daa1264de00172a24a79a710efcb8130"
   local_patch "system-appearance", sha: "d6ee159839b38b6af539d7b9bdff231263e451c1fd42eec0d125318c9db8cd92"
   local_patch "round-undecorated-frame", sha: "7e39e694ce9dca50db72c09be442c1278d1900d69c2402f289742aeae8ea4c3e"
@@ -108,9 +109,7 @@ class EmacsPlusAT29 < EmacsBase
     args << "--without-compress-install" if build.without? "compress-install"
 
     # Enable debug symbols in Homebrew's superenv
-    if build.with? "debug"
-      ENV.set_debug_symbols
-    end
+    ENV.set_debug_symbols if build.with? "debug"
 
     # Build CFLAGS - pass to configure for includes and defines
     # Note: Homebrew's superenv handles optimization (-O2) and debug (-g) flags
@@ -134,7 +133,7 @@ class EmacsPlusAT29 < EmacsBase
     end
 
     args << "CFLAGS=#{cflags.join(" ")}"
-    ENV.append "LDFLAGS", "-L#{Formula["sqlite"].opt_lib}"
+    ENV.append "LDFLAGS", "-L#{Utils::Path.formula_opt_lib("sqlite")}"
 
     args <<
       if build.with? "dbus"
@@ -154,7 +153,7 @@ class EmacsPlusAT29 < EmacsBase
       end
 
     if build.with? "imagemagick"
-      imagemagick_lib_path = Formula["imagemagick"].opt_lib/"pkgconfig"
+      imagemagick_lib_path = Utils::Path.formula_opt_lib("imagemagick")/"pkgconfig"
       ohai "ImageMagick PKG_CONFIG_PATH: ", imagemagick_lib_path
       ENV.prepend_path "PKG_CONFIG_PATH", imagemagick_lib_path
     end
@@ -182,18 +181,14 @@ class EmacsPlusAT29 < EmacsBase
                                    .gsub("#define HAVE_DECL_ALIGNED_ALLOC 1", "#undef HAVE_DECL_ALIGNED_ALLOC")
                                    .gsub("#define HAVE_ALLOCA 1", "#undef HAVE_ALLOCA")
                                    .gsub("#define HAVE_ALLOCA_H 1", "#undef HAVE_ALLOCA_H")
-        File.open("src/config.h", "w") do |f|
-          f.write(configure_h_filtered)
-        end
+        File.write("src/config.h", configure_h_filtered)
       end
 
       system "gmake"
 
       # Generate dSYM bundle for debugging BEFORE install (clang stores symbols
       # in .o files, and dsymutil needs them to extract debug info)
-      if build.with? "debug"
-        system "dsymutil", "nextstep/Emacs.app/Contents/MacOS/Emacs"
-      end
+      system "dsymutil", "nextstep/Emacs.app/Contents/MacOS/Emacs" if build.with? "debug"
 
       system "gmake", "install"
 
@@ -213,17 +208,20 @@ class EmacsPlusAT29 < EmacsBase
       inject_plist_extras
 
       # Replace the symlink with one that avoids starting Cocoa.
-      # Check multiple locations so users can copy Emacs.app to /Applications
-      # for better Spotlight integration.
+      # Prefer the bundle this formula built; fall back to /Applications and
+      # ~/Applications for users who moved Emacs.app there for better
+      # Spotlight integration. The fallbacks come last so an Emacs.app
+      # installed by the emacs-plus-app cask is never picked up instead of
+      # this formula's own build.
       (bin/"emacs").unlink # Kill the existing symlink
       (bin/"emacs").write <<~EOS
         #!/bin/bash
-        for app in "/Applications/Emacs.app" "$HOME/Applications/Emacs.app" "#{prefix}/Emacs.app"; do
+        for app in "#{prefix}/Emacs.app" "/Applications/Emacs.app" "$HOME/Applications/Emacs.app"; do
           if [ -x "$app/Contents/MacOS/Emacs" ]; then
             exec "$app/Contents/MacOS/Emacs" "$@"
           fi
         done
-        echo "Error: Emacs.app not found in /Applications, ~/Applications, or #{prefix}" >&2
+        echo "Error: Emacs.app not found in #{prefix}, /Applications, or ~/Applications" >&2
         exit 1
       EOS
     else
@@ -249,17 +247,13 @@ class EmacsPlusAT29 < EmacsBase
                                    .gsub("#define HAVE_DECL_ALIGNED_ALLOC 1", "#undef HAVE_DECL_ALIGNED_ALLOC")
                                    .gsub("#define HAVE_ALLOCA 1", "#undef HAVE_ALLOCA")
                                    .gsub("#define HAVE_ALLOCA_H 1", "#undef HAVE_ALLOCA_H")
-        File.open("src/config.h", "w") do |f|
-          f.write(configure_h_filtered)
-        end
+        File.write("src/config.h", configure_h_filtered)
       end
 
       system "gmake"
 
       # Generate dSYM bundle for debugging BEFORE install (non-Cocoa build)
-      if build.with? "debug"
-        system "dsymutil", "src/emacs"
-      end
+      system "dsymutil", "src/emacs" if build.with? "debug"
 
       system "gmake", "install"
     end
@@ -301,7 +295,8 @@ class EmacsPlusAT29 < EmacsBase
       For best Spotlight integration, copy the app to /Applications:
         cp -r #{prefix}/Emacs.app /Applications/
 
-      The `emacs` command will automatically find the app in /Applications.
+      The `emacs` command always runs this formula's own Emacs.app; copies
+      in /Applications are only used if the original is removed.
 
       Alternatively, create a Finder alias (less reliable with Spotlight):
         osascript -e 'tell application "Finder" to make alias file to posix file "#{prefix}/Emacs.app" at posix file "/Applications" with properties {name:"Emacs.app"}'
@@ -313,6 +308,11 @@ class EmacsPlusAT29 < EmacsBase
       dependencies (e.g., tree-sitter, libgccjit), reinstall emacs-plus:
         brew reinstall emacs-plus@29
 
+      Note: installing this formula alongside an emacs-plus-app cask is not
+      supported. Both provide emacs and emacsclient in $(brew --prefix)/bin,
+      and Homebrew cannot declare a conflict between a formula and a cask.
+      Keep one or the other installed.
+
       Report any issues to https://github.com/d12frosted/homebrew-emacs-plus
     EOS
   end
@@ -320,8 +320,8 @@ class EmacsPlusAT29 < EmacsBase
   service do
     run [opt_bin/"emacs", "--fg-daemon"]
     keep_alive true
-    log_path "/tmp/homebrew.mxcl.emacs-plus.stdout.log"
-    error_log_path "/tmp/homebrew.mxcl.emacs-plus.stderr.log"
+    log_path var/"log/emacs-plus@29.stdout.log"
+    error_log_path var/"log/emacs-plus@29.stderr.log"
   end
 
   test do

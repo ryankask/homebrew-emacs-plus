@@ -49,7 +49,7 @@ class EmacsPlusAT26 < EmacsBase
     # See: https://debbugs.gnu.org/cgi/bugreport.cgi?bug=24455
     args << "--with-imagemagick"
 
-    imagemagick_lib_path = Formula["imagemagick@6"].opt_lib/"pkgconfig"
+    imagemagick_lib_path = Utils::Path.formula_opt_lib("imagemagick@6")/"pkgconfig"
     ohai "ImageMagick PKG_CONFIG_PATH: ", imagemagick_lib_path
     ENV.prepend_path "PKG_CONFIG_PATH", imagemagick_lib_path
     ENV.append "CFLAGS", "-O2 -DFD_SETSIZE=10000 -DDARWIN_UNLIMITED_SELECT"
@@ -69,9 +69,7 @@ class EmacsPlusAT26 < EmacsBase
                                  .gsub("#define HAVE_DECL_ALIGNED_ALLOC 1", "#undef HAVE_DECL_ALIGNED_ALLOC")
                                  .gsub("#define HAVE_ALLOCA 1", "#undef HAVE_ALLOCA")
                                  .gsub("#define HAVE_ALLOCA_H 1", "#undef HAVE_ALLOCA_H")
-      File.open("src/config.h", "w") do |f|
-        f.write(configure_h_filtered)
-      end
+      File.write("src/config.h", configure_h_filtered)
     end
 
     system "make"
@@ -119,8 +117,8 @@ class EmacsPlusAT26 < EmacsBase
   service do
     run [opt_bin/"emacs", "--fg-daemon"]
     keep_alive true
-    log_path "/tmp/homebrew.mxcl.emacs-plus.stdout.log"
-    error_log_path "/tmp/homebrew.mxcl.emacs-plus.stderr.log"
+    log_path var/"log/emacs-plus@26.stdout.log"
+    error_log_path var/"log/emacs-plus@26.stderr.log"
   end
 
   test do
