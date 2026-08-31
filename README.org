@@ -20,7 +20,7 @@
 
 ** About
 
-Emacs+ is [[https://www.gnu.org/software/emacs/emacs.html][→ GNU Emacs]] formulae for macOS [[https://brew.sh][→ Homebrew]] package manager. It offers a wide range of extra functionality over regular [[https://formulae.brew.sh/formula/emacs#default][→ Emacs]] package. Emacs+ intent is to give the most of 'plus' stuff by default, leaving only controversial options as opt-in. Please refer to [[#options][→ Options]] section for more information.
+Emacs+ is [[https://www.gnu.org/software/emacs/emacs.html][→ GNU Emacs]] formulae for macOS [[https://brew.sh][→ Homebrew]] package manager. It offers a wide range of extra functionality over regular [[https://formulae.brew.sh/formula/emacs#default][→ Emacs]] package (see [[#tldr][→ TL;DR]] for what exactly the plus is). Emacs+ intent is to give the most of 'plus' stuff by default, leaving only controversial options as opt-in. Please refer to [[#options][→ Options]] section for more information.
 
 #+begin_src bash
   $ brew tap d12frosted/emacs-plus
@@ -30,11 +30,13 @@ Emacs+ is [[https://www.gnu.org/software/emacs/emacs.html][→ GNU Emacs]] formu
   # (or trust a single formula/cask) and retry. See https://docs.brew.sh/Tap-Trust.
 
   # Pre-built binaries (fast, ~1 min)
-  $ brew install --cask emacs-plus-app          # latest stable
+  $ brew install --cask emacs-plus-app          # latest release
+  $ brew install --cask emacs-plus-app@next     # nightly from the release branch
   $ brew install --cask emacs-plus-app@master   # nightly from master
 
   # Build from source (customizable, ~30 min)
-  $ brew install emacs-plus        [options]    # latest stable
+  $ brew install emacs-plus        [options]    # latest release
+  $ brew install emacs-plus --HEAD [options]    # from the release branch
   $ brew install emacs-plus@master [options]    # from master
 #+end_src
 
@@ -48,8 +50,23 @@ Feel free to open an issue or contact me via email if you face any issues, quest
 
 For recent changes, see [[./NEWS.org][→ News]].
 
+*** TL;DR
+
+So what exactly is the plus? Compared to the core [[https://formulae.brew.sh/formula/emacs#default][=emacs=]] formula:
+
+- *GUI application.* The core formula builds a terminal-only Emacs (configured with =--without-ns=), so there is no =Emacs.app=. Emacs+ builds a full Cocoa application, plus a companion [[#emacs-clientapp][→ Emacs Client.app]] that opens files from Finder via =emacsclient= and handles =org-protocol://= links.
+- *Native compilation.* Emacs+ ships it by default, the core formula does not.
+- *Injected PATH.* Emacs+ captures =PATH= from your shell at install time and injects it into =Emacs.app=, so binaries installed by package managers just work in GUI Emacs, no =exec-path-from-shell= needed. See [[#injected-path][→ Injected PATH]].
+- *Extra patches.* A small set applied by default, most notably =ns-system-appearance-change-functions=, a hook that fires when macOS switches between light and dark appearance. See [[#system-appearance-change][→ System appearance change]].
+- *Custom icons and patches from a simple yaml file.* Describe your build in =~/.config/emacs-plus/build.yml=: pick one of 70+ icons, apply community patches, or point to any external or local patch and icon, including ones this repository knows nothing about. See [[#build-configuration][→ Build Configuration]].
+- *More versions.* Stable release, nightlies from =master= and from the release branch, and old versions down to Emacs 26.
+- *Pre-built binaries.* The =emacs-plus-app= casks install a self-contained =Emacs.app= in about a minute, no compilation involved.
+
+Emacs+ is 10+ years old and the list of differences used to be much longer. Many patches that were exclusive to Emacs+ got merged into Emacs itself, and the core formula improved too. Nowadays the plus is mostly sane macOS defaults and the customization layer on top.
+
 ** Table of Contents :TOC_3:
   - [[#about][About]]
+    - [[#tldr][TL;DR]]
   - [[#install][Install]]
     - [[#pre-built-binaries-cask][Pre-built binaries (Cask)]]
     - [[#build-from-source-formula][Build from source (Formula)]]
@@ -98,13 +115,24 @@ For recent changes, see [[./NEWS.org][→ News]].
 
 ** Install
 
+Emacs+ comes in three lanes, each available as a cask (pre-built) and as a formula (built from source):
+
+| Lane   | Cask                    | Formula             | Source                    |
+|--------+-------------------------+---------------------+---------------------------|
+| stable | =emacs-plus-app=        | =emacs-plus=        | latest release (31.1)     |
+| next   | =emacs-plus-app@next=   | =emacs-plus --HEAD= | release branch (emacs-31) |
+| master | =emacs-plus-app@master= | =emacs-plus@master= | master (32.0.50)          |
+
+The =next= lane follows the active Emacs release branch. Right after a major release it is the stable version plus the fixes going into the next point release; later in the cycle it becomes the pretest for the next major version.
+
 *** Pre-built binaries (Cask)
 
 For fast installation without compilation (~1 min), pre-built binaries are available:
 
 #+begin_src bash
   $ brew tap d12frosted/emacs-plus
-  $ brew install --cask emacs-plus-app           # latest stable
+  $ brew install --cask emacs-plus-app           # latest release
+  $ brew install --cask emacs-plus-app@next      # nightly from the release branch
   $ brew install --cask emacs-plus-app@master    # nightly from master
 #+end_src
 
@@ -121,10 +149,10 @@ Cask builds are self-contained applications with all dependencies bundled. They 
 |----------------------+------------------------+---------------------------|
 | Install time         | ~1 minute (download)   | ~30 minutes (compile)     |
 | Custom build options | No                     | Yes (icons, patches, etc) |
-| macOS versions       | ARM64: 13+, Intel: 15+ | Any supported             |
+| macOS versions       | ARM64: 14+, Intel: 15+ | Any supported             |
 | Architectures        | ARM64 and Intel        | Any                       |
 
-*Note:* Cask builds are architecture and macOS version specific. ARM64 has dedicated builds for Sonoma (14), Sequoia (15), and Tahoe (26); Ventura (13) users get the Sonoma build. Intel has a single Sequoia (15) build.
+*Note:* Cask builds are architecture and macOS version specific. ARM64 has dedicated builds for Sonoma (14), Sequoia (15), and Tahoe (26). Intel has a single Sequoia (15) build. On older macOS versions the cask refuses to install; use the formula instead.
 
 Use the *formula* if you need custom icons, patches, or specific build options. Use the *cask* for quick installation with sensible defaults.
 
@@ -134,11 +162,12 @@ For custom build options (~30 min compile time):
 
 #+begin_src bash
   $ brew tap d12frosted/emacs-plus
-  $ brew install emacs-plus        [options]    # latest stable
+  $ brew install emacs-plus        [options]    # latest release
+  $ brew install emacs-plus --HEAD [options]    # from the release branch
   $ brew install emacs-plus@master [options]    # from master
 #+end_src
 
-Versioned formulas are also available: =emacs-plus@32=, =emacs-plus@31=, =emacs-plus@30=, =emacs-plus@29=, etc. The =emacs-plus@master= alias points to the current development version (=emacs-plus@32=).
+Versioned formulas are also available: =emacs-plus@32=, =emacs-plus@31=, =emacs-plus@30=, =emacs-plus@29=, etc. The =emacs-plus= alias points to the latest release (=emacs-plus@31=) and =emacs-plus@master= to the development version (=emacs-plus@32=).
 
 By default, formulas build Cocoa Emacs with =gnutls=, =librsvg=, =libxml2=, =tree-sitter=, =webp=, native compilation, dynamic modules, and multicolor fonts. See [[#options][→ Options]] for customization.
 
@@ -161,16 +190,22 @@ Open terminal and type the following commands (don't forget to use correct Emacs
 
 ** Reinstall
 
-If you wish to reinstall =emacs-plus= with you should not use =reinstall= command of =brew= (not related to this formula, it's a general advice). Instead, you should =uninstall= a package and then =install= it with desired options.
+=brew reinstall= is the normal way to rebuild =emacs-plus=:
 
-Avoid =reinstall= even if you want to =reinstall= with the same set of options, otherwise you will likely to get compilation errors! For example, [[https://github.com/d12frosted/homebrew-emacs-plus/issues/218][#218]] and [[https://github.com/d12frosted/homebrew-emacs-plus/issues/321][#321]].
+#+begin_src bash
+  $ brew reinstall emacs-plus@31
+#+end_src
 
-In short, =brew= doesn't really support options. They break time to time ([[https://github.com/Homebrew/brew/issues/4793][brew#4793]], [[https://github.com/Homebrew/brew/issues/7397][brew#7397]], [[https://github.com/Homebrew/brew/issues/7498][brew#7498]] to show a few).
+Use it after you change =~/.config/emacs-plus/build.yml=, pin a different revision, or when Emacs fails to start with =Library not loaded= errors after upgrading dependencies like =tree-sitter= or =libgccjit=.
 
-#+BEGIN_SRC bash
-  $ brew uninstall emacs-plus
-  $ brew install emacs-plus [options]
-#+END_SRC
+If a build fails halfway and leaves you in a weird state, uninstall and install again for a clean slate:
+
+#+begin_src bash
+  $ brew uninstall emacs-plus@31
+  $ brew install emacs-plus@31 [OPTIONS]
+#+end_src
+
+This section used to advise against =reinstall= altogether, because =brew= would lose or mangle command line options ([[https://github.com/d12frosted/homebrew-emacs-plus/issues/218][#218]], [[https://github.com/d12frosted/homebrew-emacs-plus/issues/321][#321]]). That was fixed on the =brew= side years ago, =reinstall= now reuses the options recorded at install time. If you still hit an option related problem, please report it.
 
 ** Build Configuration
 
@@ -673,7 +708,7 @@ Emacs 26 comes without any available options due to [[https://github.com/d12fros
 
 *** How to pin a specific commit
 
-Development versions (=emacs-plus@31=, =emacs-plus@32=) are built from their respective branches (=emacs-31=, =master=). Ordinarily, =brew= will update to the latest commit during installation.
+Development builds (=emacs-plus@32=, or =emacs-plus --HEAD=) are built from their respective branches (=master=, =emacs-31=). Ordinarily, =brew= will update to the latest commit during installation.
 
 As development versions are less stable than official releases, you may want to pin a specific commit. The recommended way is to use =~/.config/emacs-plus/build.yml=:
 

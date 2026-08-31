@@ -1,10 +1,10 @@
-cask "emacs-plus-app@master" do
+cask "emacs-plus-app@next" do
   # Version format: <emacs-version>-<build-number>
   # Build number corresponds to GitHub Actions run number
-  version "32.0.50-316"
+  version "31.1.50-316"
 
-  # Base URL for release assets (lane releases: cask-master-<build>)
-  base_url = "https://github.com/d12frosted/homebrew-emacs-plus/releases/download/cask-master-#{version.sub(/^[\d.]+-/, "")}"
+  # Base URL for release assets (lane releases: cask-next-<build>)
+  base_url = "https://github.com/d12frosted/homebrew-emacs-plus/releases/download/cask-next-#{version.sub(/^[\d.]+-/, "")}"
   emacs_ver = version.sub(/-\d+$/, "")
 
   on_arm do
@@ -13,21 +13,21 @@ cask "emacs-plus-app@master" do
     depends_on macos: :sonoma
 
     if MacOS.version >= :tahoe # macOS 26
-      sha256 "e02089ab1c8c758f18f62ed707a2063fdd3097ecfc6247537a1d322386b27447"
+      sha256 "14c2fae03dd05cc94e0fdb78936e5196bab417897b83bfe8cd703e1b4c3de650"
       url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-26.zip",
           verified: "github.com/d12frosted/homebrew-emacs-plus"
     elsif MacOS.version >= :sequoia # macOS 15
-      sha256 "b1326fcab4bb81e4a0b785b2e637cde8e065c6e3f84322aca7f25893aa27c72b"
+      sha256 "782531c6370203e7ded8e907ef3944c61fb4008b9b21c5d07ee816b80e17e0b5"
       url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-15.zip",
           verified: "github.com/d12frosted/homebrew-emacs-plus"
     else # macOS 14 (Sonoma)
-      sha256 "19e92cdf48d494ca0d01b05d347cda703f173440d9eb4b32d5b985bda38e4a1a"
+      sha256 "1258aada877c8754facbccf52e7aa77038d97f0d9c48bff56893a00068178d73"
       url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-14.zip",
           verified: "github.com/d12frosted/homebrew-emacs-plus"
     end
   end
   on_intel do
-    sha256 "54ec216a943567c4189cc24259a66c9209f95f0475d45d96dcf9dd4afe451c02"
+    sha256 "bece9edbe18fd468932b21ecca43ea606706df45eaab4c4e6af05cde362f699b"
 
     url "#{base_url}/emacs-plus-#{emacs_ver}-x86_64-15.zip",
         verified: "github.com/d12frosted/homebrew-emacs-plus"
@@ -37,8 +37,8 @@ cask "emacs-plus-app@master" do
     depends_on macos: :sequoia
   end
 
-  name "Emacs+ (Development)"
-  desc "GNU Emacs text editor with patches (development version)"
+  name "Emacs+ (Next)"
+  desc "GNU Emacs text editor with patches (Emacs release branch)"
   homepage "https://github.com/d12frosted/homebrew-emacs-plus"
 
   # Conflict with other Emacs cask installations
@@ -47,7 +47,7 @@ cask "emacs-plus-app@master" do
     "emacs-mac",
     "emacs-mac-spacemacs-icon",
     "emacs-plus-app",
-    "emacs-plus-app@next",
+    "emacs-plus-app@master",
   ]
   # Required for native compilation (JIT) at runtime
   # - libgccjit: JIT compilation library
@@ -62,6 +62,7 @@ cask "emacs-plus-app@master" do
   # Symlink binaries (emacs symlink created in postflight after wrapper is generated)
   # Note: emacs is symlinked manually in postflight because the wrapper script
   # is created there and binary stanzas run before postflight
+  # Note: no ctags symlink; the ctags program was removed in Emacs 31
   binary "#{appdir}/Emacs.app/Contents/MacOS/bin/emacsclient"
   binary "#{appdir}/Emacs.app/Contents/MacOS/bin/ebrowse"
   binary "#{appdir}/Emacs.app/Contents/MacOS/bin/etags"
@@ -102,17 +103,20 @@ cask "emacs-plus-app@master" do
   ]
 
   caveats <<~EOS
-    Emacs+ (development) has been installed to /Applications.
+    Emacs+ (next) has been installed to /Applications.
 
-    This is a pre-built binary from the Emacs master branch (Emacs 32).
+    This is a pre-built binary from the Emacs release branch (currently
+    emacs-31). It carries the fixes that land after the last release and
+    go into the next one: newer than the stable cask, less bleeding edge
+    than @master.
     For custom patches or build options, use the formula instead:
-      brew install emacs-plus@master --with-...
+      brew install emacs-plus --HEAD --with-...
 
     Custom icons can be configured via ~/.config/emacs-plus/build.yml:
       icon: dragon-plus
 
     To re-apply an icon after changing build.yml:
-      brew reinstall --cask emacs-plus-app@master
+      brew reinstall --cask emacs-plus-app@next
 
     Note: Emacs Client.app requires Emacs to be running as a daemon.
     Add to your Emacs config: (server-start)

@@ -3,6 +3,115 @@
 
 This file documents notable changes to Emacs Plus.
 
+* 2026-08-27
+
+** Improvements
+
+*** =brew style= runs in CI
+
+The formulas and casks are now checked with =brew style= on every push and pull request, and all existing style offenses are fixed. Two cask cops are excluded (=Cask/NoOverrides= and =Cask/OnSystemConditionals=): they demand restructuring the casks into =on_{macos_version}= blocks, which does not fit how the casks pick one of several prebuilt binaries per macOS version. As part of the cleanup the casks now declare =depends_on :macos= and their descriptions no longer name the platform.
+
+*** Caveats warn about mixing formula and cask installs
+
+The =emacs-plus@N= formulas and the =emacs-plus-app= casks both provide =emacs= and =emacsclient= in =$(brew --prefix)/bin=, but Homebrew cannot declare a conflict between a formula and a cask, so nothing stops you from installing both and ending up with commands that do not match the app you launch. The caveats on both sides now say to keep one or the other.
+
+** Changes
+
+*** Service logs move from =/tmp= to =var/log=, one pair per version
+
+Every =emacs-plus@N= service wrote to the same =/tmp/homebrew.mxcl.emacs-plus.{stdout,stderr}.log=, so running two versions interleaved their output, and the logs vanished on reboot. Each formula now logs to =$(brew --prefix)/var/log/emacs-plus@N.{stdout,stderr}.log=. Restart the service after upgrading to pick up the new paths:
+
+#+begin_src bash
+  brew services restart emacs-plus@31
+#+end_src
+
+** Bug Fixes
+
+*** Casks refuse to install on macOS versions their binaries cannot run on
+
+The prebuilt binaries have a minimum macOS baked in by the build runner: the oldest arm64 build targets macOS 14 (Sonoma) and the only Intel build targets macOS 15 (Sequoia). The casks happily installed on older systems (the arm64 fallback even claimed to cover Ventura), and the app then refused to launch. The casks now declare =depends_on macos:= per architecture, so unsupported systems get a clear error at install time. On older macOS, build from source with the formula instead.
+
+*** Formula =emacs= wrapper prefers its own =Emacs.app=
+
+The =emacs= wrapper installed by =emacs-plus@29= through =emacs-plus@32= looked for =Emacs.app= in =/Applications= first and only then in the formula's own prefix. That order predates the casks: with =emacs-plus-app= installed, a formula user running =emacs= in the terminal (or =brew services start emacs-plus@N=) silently got the cask's Emacs, possibly a different major version. The wrapper now runs the formula's own bundle first and falls back to =/Applications= and =~/Applications= only when it is missing, so copies made for Spotlight integration keep working. Reinstall the formula to get the fixed wrapper.
+
+*** Cask uninstall no longer deletes the formula's =emacs= symlink
+
+Uninstalling an =emacs-plus-app= cask removed any symlink at =$(brew --prefix)/bin/emacs=, including one created by a linked =emacs-plus@N= formula, silently leaving the formula unlinked. The cask now checks where the symlink points and only removes it when it leads into the cask's own =Emacs.app=.
+
+*** Cask =zap= no longer trashes =~/.emacs.d=
+
+=brew uninstall --zap --cask emacs-plus-app= (and the =@next= / =@master= variants) moved =~/.emacs.d= to the Trash along with the app caches. That directory is your own Emacs configuration, not something the cask created, so zap now leaves it alone and only removes the app state under =~/Library=.
+
+* 2026-08-25
+
+** Releases
+
+*** Emacs 31.1 is the default
+
+Emacs 31.1 is out, so the default moves from Emacs 30 to Emacs 31. =brew install emacs-plus= builds =emacs-plus@31= from the release tarball, and the =emacs-plus-app= cask ships Emacs 31.1.
+
+#+begin_src bash
+  $ brew upgrade emacs-plus
+  $ brew upgrade --cask emacs-plus-app
+#+end_src
+
+Emacs 30 stays available as =emacs-plus@30=. The stable cask no longer creates the =emacs-ctags= symlink, since =ctags= was removed in Emacs 31.
+
+** Changes
+
+*** Cask lanes: stable, next and master
+
+Cask releases are tagged =cask-stable-<build>=, =cask-next-<build>= and =cask-master-<build>= instead of being numbered by Emacs version. Stable and next are both Emacs 31 now, so the version number no longer tells the lanes apart.
+
+=emacs-plus-app@next= keeps tracking the Emacs release branch. Right after a major release that means 31.1 plus the fixes going into 31.2, and later in the cycle it becomes the pretest for the next major version. The source equivalent is:
+
+#+begin_src bash
+  $ brew install emacs-plus --HEAD
+#+end_src
+
+** Improvements
+
+*** Reinstall documentation matches the formula caveats
+
+The =Reinstall= section of the README advised against =brew reinstall=, while the formula caveats and the rest of the README tell you to use it (after editing =build.yml=, pinning a revision, or fixing =Library not loaded= errors). The old advice was about =brew= losing command line options, which =brew= fixed years ago. Reported in [[https://github.com/d12frosted/homebrew-emacs-plus/issues/986][#986]].
+
+** Bug Fixes
+
+*** Cask builds were missing the NS scroll crash fix
+
+The =fix-ns-scroll-crash= patch (bug#81585, see the 2026-08-18 entry) is applied by the formulas, but the cask build jobs skipped it, so =emacs-plus-app@next= and =emacs-plus-app@master= did not have it. Fixed with the next nightly build.
+
+* 2026-08-18
+
+** Bug Fixes
+
+*** Crash on macOS when hiding the header-line with =pixel-scroll-precision-mode=
+
+With =pixel-scroll-precision-mode= enabled, scrolling so a line is only partially visible and then hiding the header-line crashed Emacs with a bus error. Redisplay can send negative coordinates to the NS scroll code, which passes them straight to the pixel buffer copy. Without the fix, a fragment of the header-line is also painted over the mode-line of the window above (or over the tab-bar).
+
+This is Alan Third's patch from [[https://debbugs.gnu.org/cgi/bugreport.cgi?bug=81585][bug#81585]], which did not make it into the Emacs 31.1 release candidate. It is applied to =emacs-plus@31= and =emacs-plus@32= and will be dropped once it lands upstream.
+
+#+begin_src bash
+  brew reinstall emacs-plus@31
+#+end_src
+
+* 2026-08-12
+
+** New Features
+
+*** =emacs-plus-app@next= cask
+
+New cask that tracks the Emacs release branch (currently =emacs-31=, the Emacs 31 pretest). It fills the gap between the stable cask and the =@master= nightly: newer than stable, less bleeding edge than master. Built and updated nightly, same as =@master=. See [[https://github.com/d12frosted/homebrew-emacs-plus/issues/978][#978]].
+
+#+begin_src bash
+  $ brew install --cask emacs-plus-app           # latest stable
+  $ brew install --cask emacs-plus-app@next      # nightly from release branch (next stable)
+  $ brew install --cask emacs-plus-app@master    # nightly from master
+#+end_src
+
+Note for users switching from the stable cask: there is no =emacs-ctags= symlink, since the =ctags= program was removed in Emacs 31 (same as =@master=).
+
 * 2026-07-12
 
 ** New Features
