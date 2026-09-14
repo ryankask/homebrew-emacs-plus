@@ -95,6 +95,7 @@ Emacs+ is 10+ years old and the list of differences used to be much longer. Many
     - [[#injected-path][Injected PATH]]
     - [[#detecting-emacs-plus][Detecting Emacs Plus]]
     - [[#emacs-clientapp][Emacs Client.app]]
+    - [[#running-emacs-as-a-daemon][Running Emacs as a daemon]]
     - [[#no-titlebar][No Titlebar]]
     - [[#xwidgets-webkit][Xwidgets (webkit)]]
     - [[#system-appearance-change][System appearance change]]
@@ -149,10 +150,10 @@ Cask builds are self-contained applications with all dependencies bundled. They 
 |----------------------+------------------------+---------------------------|
 | Install time         | ~1 minute (download)   | ~30 minutes (compile)     |
 | Custom build options | No                     | Yes (icons, patches, etc) |
-| macOS versions       | ARM64: 14+, Intel: 15+ | Any supported             |
-| Architectures        | ARM64 and Intel        | Any                       |
+| macOS versions       | 14+                    | Any supported             |
+| Architectures        | ARM64 only             | Any                       |
 
-*Note:* Cask builds are architecture and macOS version specific. ARM64 has dedicated builds for Sonoma (14), Sequoia (15), and Tahoe (26). Intel has a single Sequoia (15) build. On older macOS versions the cask refuses to install; use the formula instead.
+*Note:* Cask builds are macOS version specific, with dedicated builds for Sonoma (14), Sequoia (15), and Tahoe (26). On older macOS versions, and on Intel Macs, the cask refuses to install; use the formula instead. Intel builds were dropped in September 2026, see [[https://github.com/d12frosted/homebrew-emacs-plus/issues/1002][#1002]].
 
 Use the *formula* if you need custom icons, patches, or specific build options. Use the *cask* for quick installation with sensible defaults.
 
@@ -212,7 +213,7 @@ This section used to advise against =reinstall= altogether, because =brew= would
 Emacs+ can be configured using =~/.config/emacs-plus/build.yml=. This file controls options that are applied during installation (formula) or post-installation (cask).
 
 The configuration file is searched in this order:
-1. Path specified by =HOMEBREW_EMACS_PLUS_BUILD_CONFIG= environment variable
+1. Path specified by =HOMEBREW_EMACS_PLUS_BUILD_CONFIG= environment variable (formula installs only: the cask postflight runs in Homebrew's sandbox and can read just the two paths below)
 2. =~/.config/emacs-plus/build.yml=
 3. =~/.emacs-plus-build.yml= (fallback)
 
@@ -472,6 +473,57 @@ You can then:
 The implementation uses AppleScript to properly handle macOS AppleEvents, ensuring files opened from Finder are correctly passed to =emacsclient=. PATH injection works the same as in =Emacs.app= (see [[#injected-path][→ Injected PATH]]).
 
 For more details, see [[file:docs/emacs-client-app.md][→ docs/emacs-client-app.md]].
+
+*** Running Emacs as a daemon
+
+Before setting up a persistent daemon, note that you may not need one: =Emacs Client.app= and =emacsclient -c -a ''= start a daemon on demand and reuse it afterwards.
+
+If you want a keep-alive daemon that starts at login, the setup differs between formula and cask.
+
+**** Formula
+
+The formula ships a Homebrew service:
+
+#+begin_src bash
+  brew services start emacs-plus@31
+#+end_src
+
+Logs go to =$(brew --prefix)/var/log/emacs-plus@31.{stdout,stderr}.log=. Do not start services for two versions at once: both daemons compete for the same server socket, and the loser gets stuck in a restart loop.
+
+**** Cask
+
+=brew services= only works with formulas, so the cask cannot provide a service (see [[https://github.com/d12frosted/homebrew-emacs-plus/issues/937][#937]]). A plain LaunchAgent does the same job. Save this as =~/Library/LaunchAgents/io.emacs-plus.daemon.plist= (replace =/opt/homebrew= with =/usr/local= on Intel):
+
+#+begin_src xml
+  <?xml version="1.0" encoding="UTF-8"?>
+  <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+  <plist version="1.0">
+  <dict>
+    <key>Label</key><string>io.emacs-plus.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/opt/homebrew/bin/emacs</string>
+      <string>--fg-daemon</string>
+    </array>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>StandardOutPath</key><string>/opt/homebrew/var/log/emacs-plus-daemon.log</string>
+    <key>StandardErrorPath</key><string>/opt/homebrew/var/log/emacs-plus-daemon.log</string>
+  </dict>
+  </plist>
+#+end_src
+
+Start and stop it with:
+
+#+begin_src bash
+  mkdir -p "$(brew --prefix)/var/log"
+  launchctl bootstrap gui/$UID ~/Library/LaunchAgents/io.emacs-plus.daemon.plist
+  launchctl bootout gui/$UID/io.emacs-plus.daemon
+#+end_src
+
+The =mkdir= matters: launchd does not create log directories, and without it the daemon runs with no logs.
+
+The agent survives reboots (=RunAtLoad=) and restarts the daemon if it dies (=KeepAlive=). Remove the plist file after =bootout= if you want it gone for good.
 
 *** No Titlebar
 

@@ -34,14 +34,14 @@ jobs:
       - name: Update Homebrew
         run: brew update
 
-      - name: Tap this repository
-        run: brew tap ryankask/emacs-plus
-
       # Homebrew now refuses to load formulae from third-party taps unless
       # they are explicitly trusted ("Refusing to load formula ... from
       # untrusted tap"). Trust our own tap so install can proceed in CI.
       - name: Trust tap
         run: brew trust ryankask/emacs-plus
+
+      - name: Tap this repository
+        run: brew tap ryankask/emacs-plus
 
       # Bake a literal PATH into the bottle's EMACS_PLUS_PATH. Configurable
       # via the workflow_dispatch input (GitHub Actions "Run workflow" UI);
