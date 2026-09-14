@@ -3,6 +3,68 @@
 
 This file documents notable changes to Emacs Plus.
 
+* 2026-09-08
+
+** Improvements
+
+*** Casks use =postflight_steps=
+
+Homebrew 6.0.22 deprecated the =postflight= and =uninstall_postflight= blocks casks used to run arbitrary Ruby after install, and warns about them on every load ("Calling =postflight= is deprecated! Use =postflight_steps= instead"). The replacement is a fixed list of literal steps that Homebrew runs in a sandbox, so the three casks now run the same setup (quarantine removal, environment injection, custom icon, re-signing) through =scripts/cask-postflight= as a =run= step, and the =bin/emacs= symlink is a declarative =symlink= step that Homebrew also cleans up on uninstall. Nothing changes for users: =build.yml= icons still apply, =brew reinstall --cask= still re-applies them.
+
+One consequence of the sandbox: the postflight can only read =~/.config/emacs-plus= and =~/.emacs-plus-build.yml= from your home directory, so a =HOMEBREW_EMACS_PLUS_BUILD_CONFIG= pointing elsewhere under =$HOME= is not visible to cask installs.
+
+** Bug fixes
+
+*** =brew tap d12frosted/emacs-plus= works again
+
+Dropping the Intel cask builds on 2026-09-05 left the cask =url= only inside the =on_arm= block. =brew tap= loads every cask on every OS and architecture pair before it accepts a tap, and on Intel the casks had no url, so tapping failed with "Invalid cask (macOS N on intel)" and "invalid syntax in tap". Existing checkouts kept working, which is why this went unnoticed for a few days. The url now lives at the top level and =depends_on arch: :arm64= is what refuses the install on Intel. CI runs the same readall check now. See [[https://github.com/d12frosted/homebrew-emacs-plus/issues/1005][#1005]].
+
+The casks also stop passing the =verified:= parameter to =url= and declare =depends_on macos: :sonoma= at the top level instead of a bare =depends_on :macos=: Homebrew 6.0.22 deprecated the former and disabled combining the latter two. The =postflight= deprecation warning from the same release is still there; that migration is a separate change.
+
+* 2026-09-05
+
+** Breaking changes
+
+*** Intel (x86_64) cask builds are gone
+
+Homebrew treats x86_64 macOS as a tier 3 configuration and has been dropping Intel bottles one dependency at a time: =tree-sitter= on 2026-09-01, =gcc= on 2026-09-03. The gcc one means a two hour source build on the Intel runner, and that build then fails in a way that has nothing to do with Emacs. Apple ships no new macOS for Intel after Tahoe, and GitHub retires =macos-15-intel=, the last x86_64 runner, in August 2027. Keeping the Intel leg alive had become a chore, so it is gone: the three casks are arm64 only (=depends_on arch: :arm64=) and the build matrix has no Intel leg.
+
+If you use Emacs+ on an Intel Mac, install the formula instead (=brew install emacs-plus@31=). It builds from source and needs no runner, though Homebrew's tier 3 status means some dependencies build from source too. The last Intel cask assets stay downloadable from the releases page. See [[https://github.com/d12frosted/homebrew-emacs-plus/issues/1002][#1002]].
+
+* 2026-09-01
+
+** Improvements
+
+*** Intel builds no longer hold back the arm64 releases
+
+Homebrew treats x86_64 macOS as a tier 3 configuration now and stopped shipping bottles for it. =tree-sitter= was the first dependency to go, which broke the Intel build in all three lanes, and since one failing leg fails the whole build job, nothing was released at all: the arm64 binaries were built and then thrown away.
+
+Two changes. The Intel build falls back to building =tree-sitter= from source when there is no bottle. And the release jobs now run as long as the three arm64 builds succeeded, with the Intel binary treated as optional. When a run produces no Intel binary, the cask keeps its Intel URL pointing at the last release that did, so =brew install --cask emacs-plus-app= keeps working on Intel, though the version it installs can lag behind the arm64 one.
+
+=macos-15-intel= is the last x86_64 runner GitHub offers and it retires in August 2027. See [[https://github.com/d12frosted/homebrew-emacs-plus/issues/1002][#1002]] for revisiting Intel support.
+
+*** Emacs.app declares usage descriptions for all class-based privacy services
+
+macOS attributes a privacy check to the responsible process, and for anything started from within Emacs (=M-x shell=, eshell, =M-x compile=, org-babel, vterm) that is Emacs.app. When =Info.plist= does not declare a usage description for the service, macOS never asks: it kills the process with =SIGABRT= as soon as it touches the framework. Emacs Plus declared three of these keys (camera, microphone, speech recognition), and now declares all of them: photo library (read and add), contacts, calendars (including the macOS 14+ full access and write only variants), reminders, Bluetooth, location and local network.
+
+Declaring a key grants nothing by itself. It only carries the text macOS shows in the permission dialog, and the allow or deny decision stays yours, per service, in the prompt or later in System Settings > Privacy & Security. The wording is now "An application in Emacs requires permission to ...", because Emacs itself never touches these frameworks; the prompt is always about something you started from within Emacs.
+
+The casks never declared any of these keys, only the formula did, so cask users were missing even the camera and microphone ones. Both install paths declare them now.
+
+I proposed this upstream as [[https://debbugs.gnu.org/cgi/bugreport.cgi?bug=81526][bug#81526]] and it was not accepted: the position there is that declaring the keys is not the upstream project's business and adds maintenance burden for whatever Apple does next. So it stays a downstream fix.
+
+*** README explains how to run Emacs as a daemon, for formula and cask
+
+The formula has =brew services= support, but the cask cannot have it: =brew services= only works with formulas, and the cask =service= stanza means something unrelated in the cask DSL. The README now has a [[https://github.com/d12frosted/homebrew-emacs-plus#running-emacs-as-a-daemon][Running Emacs as a daemon]] section covering =brew services= for the formula and a LaunchAgent recipe for the cask, plus a reminder that =emacsclient -c -a ''= starts a daemon on demand and may be all you need. See [[https://github.com/d12frosted/homebrew-emacs-plus/issues/937][#937]].
+
+** Bug Fixes
+
+*** Cask Intel checksums are updated again
+
+Applying =brew style= to the casks moved the =on_intel= block below =on_arm= and put a blank line between its =sha256= and =url= stanzas. The release job walks up from a url to find the checksum to rewrite and only looked at the line directly above, so from then on the Intel url advanced to each new release while its checksum stayed behind, and =brew install --cask emacs-plus-app= failed checksum verification on Intel. The =@next= and =@master= casks were affected first, then the stable one.
+
+All three casks now carry the right Intel checksum, the release job finds the stanza across blank lines and comments, and it fails outright if it cannot, instead of leaving the old value in place. It also verifies that every checksum it published made it into the cask before committing.
+
 * 2026-08-27
 
 ** Improvements

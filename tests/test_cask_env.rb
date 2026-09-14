@@ -24,6 +24,7 @@ module Hardware
 end
 
 require_relative '../Library/CaskEnv'
+require_relative '../Library/PlistExtras'
 
 class TestCaskEnv < Minitest::Test
   def setup
@@ -763,5 +764,131 @@ class TestCaskEnv < Minitest::Test
   def test_escape_for_applescript_shell_handles_normal_path
     result = CaskEnv.send(:escape_for_applescript_shell, "/usr/bin:/opt/homebrew/bin")
     assert_equal "/usr/bin:/opt/homebrew/bin", result
+  end
+  # ===========================================
+  # Tests for privacy usage descriptions
+  # ===========================================
+
+  # The prebuilt bundles ship with whatever upstream Emacs declares, so the
+  # cask has to declare the class-based TCC keys itself, the way the formula
+  # does at build time.
+  def make_app_with_plist(dir)
+    app_path = "#{dir}/Emacs.app"
+    FileUtils.mkdir_p("#{app_path}/Contents")
+    File.write("#{app_path}/Contents/Info.plist", <<~PLIST)
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+      <plist version="1.0">
+      <dict>
+      	<key>CFBundleName</key>
+      	<string>Emacs</string>
+      </dict>
+      </plist>
+    PLIST
+    app_path
+  end
+
+  def test_declare_usage_descriptions_writes_the_keys
+    Dir.mktmpdir do |dir|
+      app_path = make_app_with_plist(dir)
+
+      assert_output(/usage descriptions/i, nil) do
+        assert_equal true, CaskEnv.send(:declare_usage_descriptions, app_path)
+      end
+
+      plist = "#{app_path}/Contents/Info.plist"
+      assert PlistExtras.usage_descriptions_current?(plist)
+    end
+  end
+
+  def test_declare_usage_descriptions_is_idempotent
+    # Re-signing is driven by the return value, so a second postflight run
+    # must report that it changed nothing
+    Dir.mktmpdir do |dir|
+      app_path = make_app_with_plist(dir)
+
+      capture_io { CaskEnv.send(:declare_usage_descriptions, app_path) }
+      assert_equal false, CaskEnv.send(:declare_usage_descriptions, app_path)
+    end
+  end
+
+  def test_declare_usage_descriptions_handles_missing_app
+    Dir.mktmpdir do |dir|
+      assert_equal false, CaskEnv.send(:declare_usage_descriptions, "#{dir}/Emacs.app")
+    end
+  end
+
+  def test_inject_declares_usage_descriptions
+    Dir.mktmpdir do |dir|
+      app_path = make_app_with_plist(dir)
+      make_site_start(dir)
+
+      with_empty_build_config do
+        CaskEnv.stub(:inject_emacs_app, false) do
+          CaskEnv.stub(:inject_emacs_client_app, false) do
+            capture_io { CaskEnv.inject(app_path, "#{dir}/Emacs Client.app") }
+          end
+        end
+      end
+
+      assert PlistExtras.usage_descriptions_current?("#{app_path}/Contents/Info.plist")
+    end
+  end
+
+  # ===========================================
+  # Plist helpers: PlistBuddy instead of `defaults`, which talks to cfprefsd
+  # and is not something to rely on inside the cask steps sandbox
+  # ===========================================
+
+  def write_minimal_plist(path)
+    File.write(path, <<~PLIST)
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+      <plist version="1.0">
+      <dict>
+        <key>CFBundleIdentifier</key>
+        <string>org.gnu.Emacs</string>
+      </dict>
+      </plist>
+    PLIST
+  end
+
+  def test_plist_value_reads_existing_key_and_nil_for_missing
+    Dir.mktmpdir do |dir|
+      plist = "#{dir}/Info.plist"
+      write_minimal_plist(plist)
+      assert_equal "org.gnu.Emacs", CaskEnv.send(:plist_value, plist, "CFBundleIdentifier")
+      assert_nil CaskEnv.send(:plist_value, plist, "LSEnvironment")
+    end
+  end
+
+  def test_inject_emacs_app_adds_library_path_once
+    Dir.mktmpdir do |dir|
+      app_path = "#{dir}/Emacs.app"
+      FileUtils.mkdir_p("#{app_path}/Contents/MacOS/bin")
+      plist = "#{app_path}/Contents/Info.plist"
+      write_minimal_plist(plist)
+      CaskEnv.stub(:build_library_path, "/opt/homebrew/lib/gcc/current") do
+        assert CaskEnv.send(:inject_emacs_app, app_path)
+        assert_equal "/opt/homebrew/lib/gcc/current",
+                     CaskEnv.send(:plist_value, plist, "LSEnvironment:LIBRARY_PATH")
+        # Second run: wrapper and LSEnvironment are already in place
+        refute CaskEnv.send(:inject_emacs_app, app_path)
+      end
+      assert File.executable?("#{app_path}/Contents/MacOS/bin/emacs")
+    end
+  end
+
+  def test_client_injected_marker_round_trips
+    Dir.mktmpdir do |dir|
+      plist = "#{dir}/Info.plist"
+      write_minimal_plist(plist)
+      refute CaskEnv.send(:client_injected?, plist)
+      CaskEnv.send(:mark_client_injected, plist)
+      assert CaskEnv.send(:client_injected?, plist)
+      # Marking twice must not fail: PlistBuddy's Add errors on existing keys
+      CaskEnv.send(:mark_client_injected, plist)
+      assert CaskEnv.send(:client_injected?, plist)
+    end
   end
 end
