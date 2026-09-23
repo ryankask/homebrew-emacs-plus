@@ -1,7 +1,7 @@
 cask "emacs-plus-app@master" do
   # Version format: <emacs-version>-<build-number>
   # Build number corresponds to GitHub Actions run number
-  version "32.0.50-333"
+  version "32.0.50-342"
 
   # Base URL for release assets (lane releases: cask-master-<build>)
   base_url = "https://github.com/d12frosted/homebrew-emacs-plus/releases/download/cask-master-#{version.sub(/^[\d.]+-/, "")}"
@@ -12,13 +12,13 @@ cask "emacs-plus-app@master" do
   # check, which broke tapping (#1005). `depends_on arch:` below is what
   # refuses the install on Intel.
   if MacOS.version >= :tahoe # macOS 26
-    sha256 "448f3ed3e10967c2ebac13df9ea3a975f3afc02293a84fcd032498af47266904"
+    sha256 "a90e3dfbed45f575c4a637c518cf031011db413f4aba86681d40366b57544672"
     url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-26.zip"
   elsif MacOS.version >= :sequoia # macOS 15
-    sha256 "211e746d13d4252352f4d125989620b871d06adafa3da03ad21d393c3dfa831e"
+    sha256 "403084c6dbde5a623b7cd9bdb4b31805656a6b5dde8b937c94a5d327a1d5eb28"
     url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-15.zip"
   else # macOS 14 (Sonoma)
-    sha256 "b974b03728088d01ada0d351d02fe127454b8dfecabfcfde5657bd7a6b60c25b"
+    sha256 "f8b02f2eb841cde0e2aa0333321fdce41e5cc1d5f8c9c8d4ee356c3966a6c39b"
     url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-14.zip"
   end
 
@@ -34,17 +34,17 @@ cask "emacs-plus-app@master" do
     "emacs-plus-app",
     "emacs-plus-app@next",
   ]
-  # Required for native compilation (JIT) at runtime
-  # - libgccjit: JIT compilation library
-  # - gcc: provides toolchain and libemutls_w.a runtime library
-  depends_on formula: "libgccjit"
-  depends_on formula: "gcc"
-  # Oldest prebuilt arm64 binary targets macOS 14 (built on the macos-14
-  # runner), so Ventura cannot run it
-  depends_on macos: :sonoma
   # Prebuilt binaries are arm64 only; on Intel use the formula, which builds
   # from source. See https://github.com/d12frosted/homebrew-emacs-plus/issues/1002
   depends_on arch: :arm64
+  # Required for native compilation (JIT) at runtime
+  # - gcc: provides toolchain and libemutls_w.a runtime library
+  # - libgccjit: JIT compilation library
+  depends_on formula: "gcc"
+  depends_on formula: "libgccjit"
+  # Oldest prebuilt arm64 binary targets macOS 14 (built on the macos-14
+  # runner), so Ventura cannot run it
+  depends_on macos: :sonoma
 
   # Install the app
   app "Emacs.app"

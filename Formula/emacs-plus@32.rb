@@ -83,7 +83,6 @@ class EmacsPlusAT32 < EmacsBase
   local_patch "fix-ns-x-colors", sha: "9e5d3e26a8d388d3a000b697d582769645ca93ad597b4113744deba4b89a8b9e"
   local_patch "system-appearance", sha: "53283503db5ed2887e9d733baaaf80f2c810e668e782e988bda5855a0b1ebeb4"
   local_patch "round-undecorated-frame", sha: "c9430a1ead81e313b3d2877ff6f8044fb29441eecc7cc42000515d7c8ec6380f"
-  local_patch "fix-ns-scroll-crash", sha: "3250bf6e45cdcb3f4cbc0ace2d2d3200464331cbfb34613980554e31ec45fe6c"
   local_patch "ns-win", sha: "4829dfa8c447b714e010457f2da6b217be98bf53d454802c253bb6ae9da41038"
 
   #
@@ -250,27 +249,21 @@ class EmacsPlusAT32 < EmacsBase
 
       system "gmake", "install"
     end
+
+    # Launcher for post_install_steps, see EmacsBase#install_postinstall_launcher
+    install_postinstall_launcher
   end
 
-  def post_install
-    emacs_info_dir = info/"emacs"
-    Dir.glob(emacs_info_dir/"*.info{,.gz}") do |info_filename|
-      system "install-info", "--info-dir=#{emacs_info_dir}", info_filename
-    end
-
-    # Re-apply icon from build.yml (allows quick testing via `brew postinstall`)
-    apply_icon_post_install
-
-    # Re-sign the app for macOS Sequoia compatibility (issue #742)
-    app_path = prefix/"Emacs.app"
-    if app_path.exist?
-      ohai "Re-signing Emacs.app for macOS compatibility..."
-      system "codesign", "--force", "--deep", "--sign", "-", app_path.to_s
-    end
-
-    # Also re-sign Emacs Client.app
-    client_path = prefix/"Emacs Client.app"
-    system "codesign", "--force", "--deep", "--sign", "-", client_path.to_s if client_path.exist?
+  # Post-install setup: info manuals, custom icon from build.yml and re-signing.
+  # post_install_steps only takes literal steps, so the Ruby in Library/ runs
+  # through scripts/formula-postinstall as a `run` step, via the launcher
+  # `install` left in libexec (it knows where the tap checkout is).
+  post_install_steps do
+    run "emacs-plus-postinstall",
+        base:         :libexec,
+        args:         ["--prefix", "{{prefix}}", "--version", "{{version.major}}",
+                       "--install-info", "--apply-icon"],
+        print_stdout: true
   end
 
   def caveats

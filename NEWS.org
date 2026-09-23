@@ -3,6 +3,24 @@
 
 This file documents notable changes to Emacs Plus.
 
+* 2026-09-21
+
+** Improvements
+
+*** Formulas use =post_install_steps=
+
+Homebrew 7.0.0 deprecated the =post_install= method formulas used to run arbitrary Ruby after install ("Calling =post_install= is deprecated! Use =post_install_steps= instead"). With =HOMEBREW_DEVELOPER=1= that deprecation is an error, which is how the nightly builds of every formula started failing in the post-install phase while the build itself succeeded. The replacement is a fixed list of literal steps that Homebrew runs in the post-install sandbox, the same treatment the casks got on 2026-09-08. Every =emacs-plus@N= formula now declares a =post_install_steps= block that runs the same setup as before (info manuals, the custom icon from =build.yml=, re-signing the app bundles, and the =native-lisp= link on Emacs 28 and 29) through =scripts/formula-postinstall= as a =run= step. A step cannot know where the tap checkout is, so =install= leaves a small launcher in =libexec= that execs the script from the checkout; =brew postinstall emacs-plus@N= keeps picking up the current =Library/= and =community/= files that way. Nothing changes for users: =build.yml= icons still apply, =brew postinstall= still re-applies them, and =HOMEBREW_EMACS_PLUS_BUILD_CONFIG= is still honoured.
+
+* 2026-09-15
+
+** Bug fixes
+
+*** =brew tap d12frosted/emacs-plus= needs =brew trust= first
+
+Homebrew refuses to load formulae and casks from a tap that is not trusted with =brew trust=, and =brew tap= loads every formula and cask to verify a tap before accepting it. Until 7.0.0 the tap name on the command line counted as permission to load its files, so =brew tap d12frosted/emacs-plus= got through; Homebrew 7.0.0 (2026-09-13) dropped that exception ([[https://github.com/Homebrew/brew/pull/23864][Homebrew/brew#23864]]). Together this means tapping an untrusted tap fails with "Refusing to load formula ... from untrusted tap" for every file and then "Cannot tap d12frosted/emacs-plus: invalid syntax in tap!". Running =brew trust= after the tap, as the README and the nightly workflow used to suggest, is too late: the trust has to be recorded first, and =brew trust d12frosted/emacs-plus= works fine before the tap is installed.
+
+The README, the release notes and the workflows now trust the tap before tapping it. Existing checkouts keep working since they are already tapped, so you only hit this on a fresh machine.
+
 * 2026-09-08
 
 ** Improvements
