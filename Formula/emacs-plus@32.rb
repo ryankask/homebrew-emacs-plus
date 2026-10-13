@@ -12,6 +12,7 @@ class EmacsPlusAT32 < EmacsBase
 
   # Opt-out
   option "without-cocoa", "Build a non-Cocoa version of Emacs"
+  option "without-native-compilation-aot", "Skip full-tree AOT native compilation (retain native compiler support)"
 
   # Opt-in
   option "with-x11", "Experimental: build with x11 support"
@@ -75,6 +76,7 @@ class EmacsPlusAT32 < EmacsBase
   local_patch "system-appearance", sha: "53283503db5ed2887e9d733baaaf80f2c810e668e782e988bda5855a0b1ebeb4"
   local_patch "round-undecorated-frame", sha: "c9430a1ead81e313b3d2877ff6f8044fb29441eecc7cc42000515d7c8ec6380f"
   local_patch "ns-win", sha: "4829dfa8c447b714e010457f2da6b217be98bf53d454802c253bb6ae9da41038"
+  local_patch "apple-emoji-ink-metrics", sha: "05433cce845aff1d92a949a7e0183a896b9f827e00c0dff90b352e05862f795f"
 
   #
   # Install
@@ -88,13 +90,15 @@ class EmacsPlusAT32 < EmacsBase
     # Validate build.yml configuration early to fail fast
     validate_custom_config
 
+    native_compilation = build.without?("native-compilation-aot") ? "yes" : "aot"
+
     args = %W[
       --disable-dependency-tracking
       --disable-silent-rules
       --enable-locallisppath=#{HOMEBREW_PREFIX}/share/emacs/site-lisp
       --infodir=#{info}/emacs
       --prefix=#{prefix}
-      --with-native-compilation=aot
+      --with-native-compilation=#{native_compilation}
     ]
 
     args << "--with-xml2"

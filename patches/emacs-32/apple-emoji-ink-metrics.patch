@@ -1,0 +1,137 @@
+diff --git a/src/macfont.m b/src/macfont.m
+index 3cd3b79..bea41cf 100644
+--- a/src/macfont.m
++++ b/src/macfont.m
+@@ -2671,6 +2671,7 @@ macfont_open (struct frame * f, Lisp_Object entity, int pixel_size)
+   int i, total_width;
+   CGGlyph glyph;
+   CGFloat ascent, descent, leading;
++  bool fractional_size_p = false;
+ 
+   val = assq_no_quit (QCfont_entity, AREF (entity, FONT_EXTRA_INDEX));
+   if (! CONSP (val)
+@@ -2690,6 +2691,49 @@ macfont_open (struct frame * f, Lisp_Object entity, int pixel_size)
+       int fontsize = (int) [((NSFont *) macfont) pointSize];
+       if (fontsize != size) size = fontsize;
+     }
++
++  /* Keep the nominal Emacs size, but optionally use a fractional
++     CoreText size before any advances or glyph bounds are cached.  */
++  val = assq_no_quit (QCuse_ink_metrics, AREF (entity, FONT_EXTRA_INDEX));
++  if (macfont && CONSP (val) && !NILP (XCDR (val))
++      && (sym_traits & kCTFontTraitColorGlyphs))
++    {
++      Lisp_Object scale_property = assq_no_quit
++        (QCink_metrics_scale, AREF (entity, FONT_EXTRA_INDEX));
++
++      if (CONSP (scale_property) && FLOATP (XCDR (scale_property)))
++        {
++          double ratio = XFLOAT_DATA (XCDR (scale_property));
++
++          if (isfinite (ratio) && ratio > 0 && ratio < 1)
++            {
++              CFStringRef family_name = CTFontCopyFamilyName (macfont);
++
++              if (family_name
++                  && CFEqual (family_name, CFSTR ("Apple Color Emoji")))
++                {
++                  CTFontRef scaled;
++
++                  /* Leave room for the synthetic bold stroke as well.  */
++                  if (!(sym_traits & kCTFontTraitBold)
++                      && FONT_WEIGHT_NUMERIC (entity)
++                         == FONT_WEIGHT_SYNTHETIC_BOLD)
++                    ratio /= 1 + synthetic_bold_factor / 2;
++                  scaled = CTFontCreateCopyWithAttributes
++                    (macfont, CTFontGetSize (macfont) * ratio, NULL, NULL);
++
++                  if (scaled)
++                    {
++                      CFRelease (macfont);
++                      macfont = scaled;
++                      fractional_size_p = true;
++                    }
++                }
++              if (family_name)
++                CFRelease (family_name);
++            }
++        }
++    }
+   unblock_input ();
+   if (! macfont)
+     return Qnil;
+@@ -2711,7 +2755,9 @@ macfont_open (struct frame * f, Lisp_Object entity, int pixel_size)
+   macfont_info->cgfont = CTFontCopyGraphicsFont (macfont, NULL);
+ 
+   val = assq_no_quit (QCdestination, AREF (entity, FONT_EXTRA_INDEX));
+-  if (CONSP (val) && BASE_EQ (XCDR (val), make_fixnum (1)))
++  /* The legacy screen-font path only supports integer sizes.  */
++  if (!fractional_size_p
++      && CONSP (val) && BASE_EQ (XCDR (val), make_fixnum (1)))
+     macfont_info->screen_font = mac_screen_font_create_with_name (font_name,
+                                                                   size);
+   else
+@@ -2801,6 +2847,50 @@ macfont_open (struct frame * f, Lisp_Object entity, int pixel_size)
+     font->descent = descent + 0.5f;
+   else
+     font->descent = descent + leading + 0.5f;
++
++  /* Opt in to tighter line metrics for Apple Color Emoji without
++     changing the size or positioning of its glyphs.  Use every glyph,
++     not a representative emoji that might underestimate the bounds.  */
++  val = assq_no_quit (QCuse_ink_metrics, AREF (entity, FONT_EXTRA_INDEX));
++  if (CONSP (val) && !NILP (XCDR (val)) && macfont_info->color_bitmap_p)
++    {
++      CFStringRef family_name = CTFontCopyFamilyName (macfont);
++
++      if (family_name && CFEqual (family_name, CFSTR ("Apple Color Emoji")))
++        {
++          CFIndex glyph_count = CTFontGetGlyphCount (macfont);
++
++          /* CGGlyph is a 16-bit glyph index.  */
++          if (glyph_count > 0 && glyph_count <= 0x10000)
++            {
++              CGGlyph *glyphs = xnmalloc (glyph_count, sizeof *glyphs);
++              CGRect bounds;
++
++              for (i = 0; i < glyph_count; i++)
++                glyphs[i] = i;
++              bounds = CTFontGetBoundingRectsForGlyphs
++                (macfont, kCTFontOrientationDefault, glyphs, NULL, glyph_count);
++              xfree (glyphs);
++
++              /* Match the padding used by macfont_glyph_extents.  */
++              if (macfont_info->synthetic_bold_p)
++                {
++                  CGFloat d = (- synthetic_bold_factor
++                               * CTFontGetSize (macfont) / 2);
++                  bounds = CGRectInset (bounds, d, d);
++                }
++              if (!CGRectIsEmpty (bounds)
++                  && isfinite (CGRectGetMaxY (bounds))
++                  && isfinite (CGRectGetMinY (bounds)))
++                {
++                  font->ascent = max (0, (int) ceil (CGRectGetMaxY (bounds)));
++                  font->descent = max (0, (int) ceil (-CGRectGetMinY (bounds)));
++                }
++            }
++        }
++      if (family_name)
++        CFRelease (family_name);
++    }
+   font->height = font->ascent + font->descent;
+ 
+   font->underline_position = - CTFontGetUnderlinePosition (macfont) + 0.5f;
+@@ -4238,6 +4328,12 @@ syms_of_macfont (void)
+   /* The boolean-valued font property key specifying the use of leading.  */
+   DEFSYM (QCminspace, ":minspace");
+ 
++  /* Non-nil opts Apple Color Emoji into font-wide ink-bound metrics.  */
++  DEFSYM (QCuse_ink_metrics, ":use-ink-metrics");
++
++  /* An optional float in (0, 1) scales only opted-in Apple emoji.  */
++  DEFSYM (QCink_metrics_scale, ":ink-metrics-scale");
++
+   macfont_family_cache = Qnil;
+   staticpro (&macfont_family_cache);
+ 
