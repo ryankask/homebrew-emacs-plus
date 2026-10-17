@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       inject_path:
-        description: "Literal PATH value to bake into the bottle's EMACS_PLUS_PATH"
+        description: "PATH to bake into the bottle; ~/ entries resolve when Emacs starts"
         required: false
-        default: "/Users/ryan.k/.config/herd-lite/bin:/Users/ryan.k/.local/bin:/Users/ryan.k/go/bin:/Users/ryan.k/.cargo/bin:/Users/ryan.k/.cabal/bin:/Users/ryan.k/.ghcup/bin:/opt/local/google-cloud-sdk/bin:/opt/workbrew/bin:/opt/homebrew/opt/coreutils/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/pkg/env/global/bin:/Applications/kitty.app/Contents/MacOS:/Users/ryan.k/.orbstack/bin"
+        default: "~/.config/herd-lite/bin:~/.local/bin:~/go/bin:~/.cargo/bin:~/.cabal/bin:~/.ghcup/bin:/opt/local/google-cloud-sdk/bin:/opt/workbrew/bin:/opt/homebrew/opt/coreutils/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/pkg/env/global/bin:/Applications/kitty.app/Contents/MacOS:~/.orbstack/bin"
   schedule:
     - cron: "0 3 * * *"
 
@@ -21,10 +21,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # Full history is needed so the "Update nightly branch" step
+          # Full history is needed so the "Prepare nightly sources" step
           # can merge main into nightly (a shallow clone has no common
           # ancestor -> "refusing to merge unrelated histories").
           fetch-depth: 0
+
+      # Build the merged sources, but publish them only after the bottle exists.
+      - name: Prepare nightly sources
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin '+refs/heads/*:refs/remotes/origin/*'
+          git checkout --force -B nightly origin/nightly
+          git merge --no-edit origin/main
 
       # The runner image ships a stale Homebrew, while formula metadata
       # comes fresh from the JSON API. When homebrew-core starts using a
@@ -43,15 +52,21 @@ jobs:
       - name: Tap this repository
         run: brew tap ryankask/emacs-plus
 
-      # Bake a literal PATH into the bottle's EMACS_PLUS_PATH. Configurable
-      # via the workflow_dispatch input (GitHub Actions "Run workflow" UI);
-      # scheduled runs use the default. Without this override, the bottle
-      # would bake in the CI runner's default PATH (cargo, Android SDK,
-      # dotnet, Python framework, etc.) via ORIGINAL_PATHS.
-      - name: Set PATH to inject into bottle
+      # brew installs from its own tap checkout, not GITHUB_WORKSPACE.
+      - name: Use prepared sources in the build tap
         run: |
-          INJECT_PATH="${{ inputs.inject_path }}"
-          : "${INJECT_PATH:=/Users/ryan.k/.config/herd-lite/bin:/Users/ryan.k/.local/bin:/Users/ryan.k/go/bin:/Users/ryan.k/.cargo/bin:/Users/ryan.k/.cabal/bin:/Users/ryan.k/.ghcup/bin:/opt/local/google-cloud-sdk/bin:/opt/workbrew/bin:/opt/homebrew/opt/coreutils/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/pkg/env/global/bin:/Applications/kitty.app/Contents/MacOS:/Users/ryan.k/.orbstack/bin}"
+          TAP_ROOT="$(brew --repository ryankask/emacs-plus)"
+          git -C "$TAP_ROOT" fetch "$GITHUB_WORKSPACE" HEAD
+          git -C "$TAP_ROOT" checkout --detach FETCH_HEAD
+          echo "HOMEBREW_NO_AUTO_UPDATE=1" >> "$GITHUB_ENV"
+
+      # Override the CI runner's PATH with portable home-relative entries.
+      # Keep ~ literal here: site-start.el resolves it for the runtime user.
+      - name: Set PATH to inject into bottle
+        env:
+          INJECT_PATH: ${{ inputs.inject_path }}
+        run: |
+          : "${INJECT_PATH:=~/.config/herd-lite/bin:~/.local/bin:~/go/bin:~/.cargo/bin:~/.cabal/bin:~/.ghcup/bin:/opt/local/google-cloud-sdk/bin:/opt/workbrew/bin:/opt/homebrew/opt/coreutils/libexec/gnubin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/pkg/env/global/bin:/Applications/kitty.app/Contents/MacOS:~/.orbstack/bin}"
           echo "HOMEBREW_EMACS_PLUS_INJECT_PATH=$INJECT_PATH" >> "$GITHUB_ENV"
 
       - name: Build emacs-plus@32
@@ -61,6 +76,11 @@ jobs:
 
       - name: Test installation
         run: $(brew --prefix)/bin/emacs --batch --eval='(print (+ 2 2))'
+
+      - name: Test portable PATH injection
+        run: |
+          EMACS="$(brew --prefix)/bin/emacs" ruby tests/test_formula_path.rb
+          ruby tests/test_bottle_sources.rb
 
       # Emacs bakes its build-time PATH into the binary .pdmp dump file.
       # Under Homebrew's build sandbox that PATH includes the shim directory
@@ -140,21 +160,11 @@ jobs:
       # The bottle block lives on the `nightly` branch only (the fork's
       # default branch), so the tap serves it and `brew update` picks it
       # up. `main` stays free of bot commits for clean upstream merges.
-      # Each run checks out the existing nightly, merges in main to track
-      # upstream changes, then updates the sha256 in place and pushes
-      # normally (fast-forward). Force-push is avoided because `brew
-      # update` rebases the tap and a rewritten history causes conflicts.
+      # Publish the exact merged sources used by the build; do not merge
+      # newer main changes after compiling. Push normally (fast-forward):
+      # force-push would cause conflicts when `brew update` rebases the tap.
       - name: Update nightly branch
         run: |
-          # Fetch all branches (checkout only fetches the default branch).
-          git fetch origin '+refs/heads/*:refs/remotes/origin/*'
-
-          # Check out the existing nightly branch (carries the bottle
-          # block) and merge main so nightly tracks upstream changes the
-          # user has merged into main.
-          git checkout --force -B nightly origin/nightly
-          git merge --no-edit origin/main
-
           # Update the sha256 in the existing bottle block (idempotent).
           ruby - Formula/emacs-plus@32.rb <<'RUBY'
             path = ARGV[0]
@@ -167,8 +177,6 @@ jobs:
             File.write(path, updated)
           RUBY
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula/emacs-plus@32.rb
           git commit -m "chore: update emacs-plus@32 nightly bottle sha256"
           git push origin nightly

@@ -8,7 +8,8 @@ Personal fork of [d12frosted/homebrew-emacs-plus](https://github.com/d12frosted/
 - Default branch is `nightly` — it carries the fork's bottle block and bot
   commits. It is CI-managed: do not commit to it locally (a local
   `pre-commit` hook in `.git/hooks` blocks this); the `build-bottle.yml`
-  workflow merges `main` into it and bumps the bottle sha256.
+  workflow merges `main` before building and publishes the bottle sha256
+  after uploading the release asset.
 - `main` carries the fork's changes and stays free of bot commits so
   upstream merges stay clean.
 
@@ -32,6 +33,13 @@ remove the release-upload steps from `build-bottle.yml`, and never delete the
 `emacs-plus-32-nightly` release.
 
 ## Fork-only customizations
+
+The work machine cannot install casks, so keep distributing a formula bottle.
+User-home entries in the bottle's injected PATH use `~/`, resolved at runtime
+by the generated `site-start.el` and Emacs Client shell commands. Keep these
+entries literal in CI so the same bottle works for `ryan` and `ryan.k`.
+The build tap must use the prepared merged checkout; merging `main` only after
+building can publish new startup code alongside a bottle containing old code.
 
 `Formula/emacs-plus@32.rb` carries fork-only patches, including the custom
 `patches/emacs-32/ns-win.patch`, which removes Emacs's default Nextstep
