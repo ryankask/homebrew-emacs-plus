@@ -1,6 +1,7 @@
 require_relative "UrlResolver"
 require_relative "BuildConfig"
 require_relative "PlistExtras"
+require "shellwords"
 
 class CopyDownloadStrategy < AbstractFileDownloadStrategy
   def initialize(url, name, version, **meta)
@@ -601,11 +602,17 @@ class EmacsBase < Formula
             (exec-path-from-shell-initialize))")
 
         (when-let ((emacs-plus-path (getenv "EMACS_PLUS_PATH")))
-          ;; Set exec-path for Emacs to find executables
-          (setq exec-path (append (split-string emacs-plus-path ":" t)
-                                  (list exec-directory)))
-          ;; Set PATH in process-environment for subprocesses
-          (setenv "PATH" emacs-plus-path))
+          ;; Resolve home-relative bottle paths for the user running Emacs,
+          ;; not the CI builder or the user who installed the bottle.
+          (let ((paths (mapcar (lambda (path)
+                                 (if (or (equal path "~")
+                                         (string-prefix-p "~/" path))
+                                     (expand-file-name path)
+                                   path))
+                               (split-string emacs-plus-path ":" t))))
+            ;; Keep Emacs and its subprocesses on the same expanded PATH.
+            (setq exec-path (append paths (list exec-directory)))
+            (setenv "PATH" (mapconcat #'identity paths ":"))))
 
         #{BuildConfig.native_comp_driver_options_el(HOMEBREW_PREFIX).chomp}
 
@@ -728,12 +735,27 @@ class EmacsBase < Formula
     self.class.escape_for_applescript_shell(str)
   end
 
+  # Emacs Client.app starts emacsclient (and possibly a daemon) via a shell.
+  # Quote each PATH entry as data, except for an explicit runtime HOME prefix,
+  # then escape the assignment for an AppleScript double-quoted string.
+  def self.applescript_path_assignment(path)
+    entries = path.to_s.split(":", -1).map do |entry|
+      if entry == "~"
+        '"$HOME"'
+      elsif entry.start_with?("~/")
+        %Q("$HOME"/#{Shellwords.escape(entry.delete_prefix("~/"))})
+      else
+        Shellwords.escape(entry)
+      end
+    end
+    "PATH=#{entries.join(":")}".gsub('\\') { '\\\\' }.gsub('"') { '\\"' }
+  end
+
   def create_emacs_client_app(icons_dir)
     ohai "Creating Emacs Client.app"
 
-    # Prepare PATH for injection into AppleScript (see escape_for_applescript_shell)
-    # Use the same build_path logic as inject_path for consistency
-    escaped_path = escape_for_applescript_shell(build_path)
+    # Resolve home-relative paths for the runtime user, just as site-start.el does.
+    escaped_path = self.class.applescript_path_assignment(build_path)
 
     # Create AppleScript source
     client_script = buildpath/"emacs-client.applescript"
@@ -745,7 +767,7 @@ class EmacsBase < Formula
         repeat with oneDrop in theDropped
           set dropPath to quoted form of POSIX path of oneDrop
           try
-            do shell script "PATH='#{escaped_path}' #{prefix}/bin/emacsclient -c -a '' -n " & dropPath
+            do shell script "#{escaped_path} #{prefix}/bin/emacsclient -c -a '' -n " & dropPath
           end try
         end repeat
         try
@@ -756,7 +778,7 @@ class EmacsBase < Formula
       -- Handle launch without files (from Spotlight, Dock, or Finder)
       on run
         try
-          do shell script "PATH='#{escaped_path}' #{prefix}/bin/emacsclient -c -a '' -n"
+          do shell script "#{escaped_path} #{prefix}/bin/emacsclient -c -a '' -n"
         end try
         try
           do shell script "open -a Emacs"
@@ -766,7 +788,7 @@ class EmacsBase < Formula
       -- Handle org-protocol:// URLs (for org-capture, org-roam, etc.)
       on open location this_URL
         try
-          do shell script "PATH='#{escaped_path}' #{prefix}/bin/emacsclient -n " & quoted form of this_URL
+          do shell script "#{escaped_path} #{prefix}/bin/emacsclient -n " & quoted form of this_URL
         end try
         try
           do shell script "open -a Emacs"
