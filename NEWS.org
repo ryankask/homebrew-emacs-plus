@@ -3,6 +3,84 @@
 
 This file documents notable changes to Emacs Plus.
 
+* 2026-10-05
+
+** Bug fixes
+
+*** Native compilation works with =-Q= and =--no-site-file=
+
+The fix from 2026-07-08 for "ld: library 'emutls_w' not found" lived in =site-start.el=, so it did nothing for an Emacs started with =-Q= or =--no-site-file=. Tools like [[https://github.com/emacs-eldev/eldev][Eldev]] start Emacs that way, and a terminal launch has no =LIBRARY_PATH= either, so as soon as something had to be compiled into a cold =eln-cache=, for example the trampoline for an advised primitive like =insert-file-contents=, linking failed. Every rebuild of Emacs starts a new =eln-cache= directory, so this tended to show up right after a reinstall. See [[https://github.com/d12frosted/homebrew-emacs-plus/issues/964][#964]].
+
+The driver options now come from a =site-init.el= that the build writes into Emacs's =lisp= directory. Emacs loads that file while building its dump, so the code is part of Emacs itself and runs no matter how Emacs is started. It also runs later than before: the gcc paths are resolved when =comp.el= loads, that is only when something actually gets compiled, so startup no longer runs =gcc= every time. The block in =site-start.el= is gone for formula builds. Cask builds made before this change still get it when installed.
+
+Formula users need to reinstall, cask users get it with the next build:
+
+#+begin_src bash
+brew reinstall emacs-plus@31   # or the version you use
+#+end_src
+
+* 2026-10-03
+
+** Bug fixes
+
+*** =Emacs Client.app= no longer starts a second Emacs
+
+After running =emacsclient=, =Emacs Client.app= brings Emacs to the front. Since 2025-12-28 it did that with =open -a Emacs=, which asks LaunchServices for an =Emacs.app= by name. LaunchServices answers with the one launched most recently from Finder, the Dock or Spotlight, not with the daemon =emacsclient= talks to. So once a second =Emacs.app= was around, for example a copy in =/Applications= that was launched once, or another =emacs-plus@N=, every click on =Emacs Client.app= started that other Emacs next to the daemon, with its own frame. See [[https://github.com/d12frosted/homebrew-emacs-plus/discussions/1020][#1020]].
+
+=Emacs Client.app= now activates Emacs with =tell application id= again, which talks to the running Emacs directly. The bundle id is kept in a variable, so compiling the script does not need =Emacs.app= to be installed, which is why =open -a= replaced it in the first place.
+
+Formula users need to reinstall to get the fix, cask users get it with the next build:
+
+#+begin_src bash
+brew reinstall emacs-plus@31   # or the version you use
+#+end_src
+
+If you copied =Emacs Client.app= to =/Applications=, copy it again after reinstalling: a copy does not update by itself.
+
+*** A copied =Emacs Client.app= keeps working after upgrades
+
+Formula builds of =Emacs Client.app= called =emacsclient= through the versioned keg path, e.g. =/opt/homebrew/Cellar/emacs-plus@31/31.1/bin/emacsclient=. Upgrades replace that path, so a copy in =/Applications= quietly stopped working after the next version or revision bump. It now calls =emacsclient= through the formula's =opt= path (=$(brew --prefix emacs-plus@31)=), which follows upgrades.
+
+The formula caveats and the README no longer suggest Finder aliases either: an alias points at the versioned keg it was made for and stops working once an upgrade replaces it. Formulas don't install apps into =/Applications=, so the caveats now point to the =emacs-plus-app= casks for that and describe the two formula options: copying (copy =Emacs.app= again after each upgrade) and symlinking (the links follow upgrades, but Spotlight may not show them).
+
+To pick this up, reinstall the formula, and copy =Emacs Client.app= to =/Applications= again if you use a copy.
+
+*** org-protocol links no longer start a second Emacs
+
+=Emacs Client.app= handled =org-protocol://= links with =emacsclient -n URL=. With a daemon that had no frame yet, for example one started by =brew services= or a LaunchAgent, the URL went to the daemon's invisible frame, so nothing showed up, and bringing Emacs to the front started a second Emacs, because macOS does not know such a daemon as an app until it opens its first frame. With no daemon running at all, the URL was dropped and a plain Emacs started instead.
+
+The handler now runs =emacsclient -r -a '' -n URL=: =-r= reuses the current frame and creates one only when there is none, and =-a ''= starts the daemon when it is not running, like the other handlers do.
+
+Formula users need to reinstall (and copy =Emacs Client.app= to =/Applications= again if they use a copy), cask users get it with the next build.
+
+* 2026-09-27
+
+** Improvements
+
+*** macOS 14 (Sonoma) cask builds are gone
+
+Homebrew moved macOS 14 to tier 3 and no longer builds bottles for it, so every dependency updated since then builds from source on the Sonoma runner. =librsvg= pulls in =llvm@22= through =rust=, and building that from source alone takes almost two hours. Since 2026-09-20 the Sonoma job took around 2.5 hours against about 25 minutes for the other two, and every release waited for it. It only gets worse as more dependencies lose their bottles (=gcc= next time it is bumped). So the Sonoma leg is gone: the three casks require macOS 15 (=depends_on macos: :sequoia=) and ship builds for Sequoia and Tahoe only.
+
+If you use a cask on Sonoma, switch to the formula (=brew install emacs-plus@31=), which builds from source; expect Homebrew to build some dependencies from source too. Until then, the installed cask keeps working, but =brew upgrade= refuses to update it. The last Sonoma cask assets stay downloadable from the releases page.
+
+* 2026-09-26
+
+** Bug fixes
+
+*** Cask builds load their =site-start.el= again
+
+Since 2026-03-06 the cask builds were configured with =--enable-locallisppath= pointing at Homebrew's =site-lisp=, so packages like mu4e from =brew install mu= are found ([[https://github.com/d12frosted/homebrew-emacs-plus/issues/930][#930]]). That flag replaces the default site-lisp search path instead of extending it, and for a self-contained app the default is the bundle's own =Contents/Resources/site-lisp=. So the bundled =site-start.el= was never loaded: =ns-emacs-plus-version= was undefined, and the native compilation fix from 2026-07-08 never took effect. A terminal-launched Emacs with a cold =eln-cache= kept failing with "ld: library 'emutls_w' not found"; GUI launches worked only because they get =LIBRARY_PATH= from =Info.plist=. See [[https://github.com/d12frosted/homebrew-emacs-plus/issues/1016][#1016]].
+
+The cask builds no longer pass the flag. Instead, =site-start.el= adds Homebrew's =site-lisp= to =load-path= and loads its =subdirs.el= if there is one, the same way Emacs treats site-lisp directories at startup, so mu4e and friends are still found.
+
+The =native-comp-driver-options= block in =site-start.el= also keeps Emacs's own macOS default (=-Wl,-w=, which silences ld warnings) instead of starting from an empty list. This applies to formula builds too.
+
+If you added a workaround that loads =site-start.el= by hand, remove it after upgrading:
+
+#+begin_src bash
+brew upgrade --cask emacs-plus-app   # or @next / @master
+#+end_src
+
 * 2026-09-21
 
 ** Improvements

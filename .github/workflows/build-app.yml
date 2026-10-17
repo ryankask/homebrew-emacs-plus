@@ -43,9 +43,6 @@ jobs:
           - runner: macos-15
             arch: arm64
             os_name: sequoia
-          - runner: macos-14
-            arch: arm64
-            os_name: sonoma
     runs-on: ${{ matrix.platform.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -62,8 +59,18 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install autoconf automake texinfo gnutls librsvg libxml2 \
-            gcc libgccjit pkg-config webp tree-sitter
+          # Retry: on Tier 3 macOS versions some deps build from source and
+          # fetch GitHub compare .diff patches, which are not byte-stable and
+          # occasionally fail checksum verification. Drop cached patches and
+          # try again.
+          for attempt in 1 2 3; do
+            brew install autoconf automake texinfo gnutls librsvg libxml2 \
+              gcc libgccjit pkg-config webp tree-sitter && break
+            [ "$attempt" = 3 ] && exit 1
+            echo "::warning::brew install failed (attempt $attempt), retrying"
+            rm -f "$(brew --cache)"/downloads/*.diff "$(brew --cache)"/downloads/*.patch*
+            sleep 30
+          done
 
       - name: Clone Emacs source
         run: |
@@ -139,10 +146,12 @@ jobs:
           # - FD_SETSIZE=10000: Increases file descriptor limit (default ~1024) for LSP/eglot
           # - DARWIN_UNLIMITED_SELECT: Removes macOS select() limit
           # Note: ImageMagick excluded to avoid libomp conflicts (issue #890)
+          # Note: no --enable-locallisppath; it replaces the bundle site-lisp,
+          # so site-start.el never loads. The cask postflight adds Homebrew
+          # site-lisp to load-path from site-start.el instead (issue #1016)
           ./configure \
             CFLAGS="-DFD_SETSIZE=10000 -DDARWIN_UNLIMITED_SELECT -I$(brew --prefix gcc)/include -I$(brew --prefix libgccjit)/include" \
             LDFLAGS="-L$GCC_LIB -Wl,-rpath,$GCC_LIB" \
-            --enable-locallisppath=$HOMEBREW_PREFIX/share/emacs/site-lisp \
             --with-ns \
             --with-native-compilation=aot \
             --with-xwidgets \
@@ -153,6 +162,12 @@ jobs:
             --with-webp \
             --without-dbus \
             --without-compress-install
+          # Preload the native-comp driver options into the dump, so they
+          # apply with -Q and --no-site-file too (issue #964). Mirrors
+          # Library/EmacsBase.rb#write_site_init.
+          ruby -I../Library -rBuildConfig \
+            -e 'print BuildConfig.site_init_el(ENV.fetch("HOMEBREW_PREFIX"))' \
+            > lisp/site-init.el
           make -j$(sysctl -n hw.ncpu)
           make install
 
@@ -318,9 +333,7 @@ jobs:
                 do shell script "EMACSCLIENT_PATH -c -a '' -n " & dropPath
               end try
             end repeat
-            try
-              do shell script "open -a Emacs"
-            end try
+            my activateEmacs()
           end open
 
           -- Handle launch without files (from Spotlight, Dock, or Finder)
@@ -328,20 +341,28 @@ jobs:
             try
               do shell script "EMACSCLIENT_PATH -c -a '' -n"
             end try
-            try
-              do shell script "open -a Emacs"
-            end try
+            my activateEmacs()
           end run
 
           -- Handle org-protocol:// URLs (for org-capture, org-roam, etc.)
+          -- -r reuses the current frame and creates one only if the daemon has none
           on open location this_URL
             try
-              do shell script "EMACSCLIENT_PATH -n " & quoted form of this_URL
+              do shell script "EMACSCLIENT_PATH -r -a '' -n " & quoted form of this_URL
             end try
-            try
-              do shell script "open -a Emacs"
-            end try
+            my activateEmacs()
           end open location
+
+          -- Bring the running Emacs to the front. `open -a Emacs` would pick an
+          -- Emacs.app by name and could start a second Emacs next to the daemon.
+          -- The id is kept in a variable so osacompile does not look the app up
+          -- at compile time, when Emacs.app may not be installed yet.
+          on activateEmacs()
+            set emacsId to "org.gnu.Emacs"
+            try
+              tell application id emacsId to activate
+            end try
+          end activateEmacs
           APPLESCRIPT_EOF
 
           # Replace placeholder with actual path
@@ -472,9 +493,6 @@ jobs:
           - runner: macos-15
             arch: arm64
             os_name: sequoia
-          - runner: macos-14
-            arch: arm64
-            os_name: sonoma
     runs-on: ${{ matrix.platform.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -491,8 +509,18 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install autoconf automake texinfo gnutls librsvg libxml2 \
-            gcc libgccjit pkg-config webp tree-sitter
+          # Retry: on Tier 3 macOS versions some deps build from source and
+          # fetch GitHub compare .diff patches, which are not byte-stable and
+          # occasionally fail checksum verification. Drop cached patches and
+          # try again.
+          for attempt in 1 2 3; do
+            brew install autoconf automake texinfo gnutls librsvg libxml2 \
+              gcc libgccjit pkg-config webp tree-sitter && break
+            [ "$attempt" = 3 ] && exit 1
+            echo "::warning::brew install failed (attempt $attempt), retrying"
+            rm -f "$(brew --cache)"/downloads/*.diff "$(brew --cache)"/downloads/*.patch*
+            sleep 30
+          done
 
       - name: Clone Emacs source
         run: |
@@ -568,10 +596,12 @@ jobs:
           # - FD_SETSIZE=10000: Increases file descriptor limit (default ~1024) for LSP/eglot
           # - DARWIN_UNLIMITED_SELECT: Removes macOS select() limit
           # Note: ImageMagick excluded to avoid libomp conflicts (issue #890)
+          # Note: no --enable-locallisppath; it replaces the bundle site-lisp,
+          # so site-start.el never loads. The cask postflight adds Homebrew
+          # site-lisp to load-path from site-start.el instead (issue #1016)
           ./configure \
             CFLAGS="-DFD_SETSIZE=10000 -DDARWIN_UNLIMITED_SELECT -I$(brew --prefix gcc)/include -I$(brew --prefix libgccjit)/include" \
             LDFLAGS="-L$GCC_LIB -Wl,-rpath,$GCC_LIB" \
-            --enable-locallisppath=$HOMEBREW_PREFIX/share/emacs/site-lisp \
             --with-ns \
             --with-native-compilation=aot \
             --with-xwidgets \
@@ -582,6 +612,12 @@ jobs:
             --with-webp \
             --without-dbus \
             --without-compress-install
+          # Preload the native-comp driver options into the dump, so they
+          # apply with -Q and --no-site-file too (issue #964). Mirrors
+          # Library/EmacsBase.rb#write_site_init.
+          ruby -I../Library -rBuildConfig \
+            -e 'print BuildConfig.site_init_el(ENV.fetch("HOMEBREW_PREFIX"))' \
+            > lisp/site-init.el
           make -j$(sysctl -n hw.ncpu)
           make install
 
@@ -747,9 +783,7 @@ jobs:
                 do shell script "EMACSCLIENT_PATH -c -a '' -n " & dropPath
               end try
             end repeat
-            try
-              do shell script "open -a Emacs"
-            end try
+            my activateEmacs()
           end open
 
           -- Handle launch without files (from Spotlight, Dock, or Finder)
@@ -757,20 +791,28 @@ jobs:
             try
               do shell script "EMACSCLIENT_PATH -c -a '' -n"
             end try
-            try
-              do shell script "open -a Emacs"
-            end try
+            my activateEmacs()
           end run
 
           -- Handle org-protocol:// URLs (for org-capture, org-roam, etc.)
+          -- -r reuses the current frame and creates one only if the daemon has none
           on open location this_URL
             try
-              do shell script "EMACSCLIENT_PATH -n " & quoted form of this_URL
+              do shell script "EMACSCLIENT_PATH -r -a '' -n " & quoted form of this_URL
             end try
-            try
-              do shell script "open -a Emacs"
-            end try
+            my activateEmacs()
           end open location
+
+          -- Bring the running Emacs to the front. `open -a Emacs` would pick an
+          -- Emacs.app by name and could start a second Emacs next to the daemon.
+          -- The id is kept in a variable so osacompile does not look the app up
+          -- at compile time, when Emacs.app may not be installed yet.
+          on activateEmacs()
+            set emacsId to "org.gnu.Emacs"
+            try
+              tell application id emacsId to activate
+            end try
+          end activateEmacs
           APPLESCRIPT_EOF
 
           # Replace placeholder with actual path
@@ -901,9 +943,6 @@ jobs:
           - runner: macos-15
             arch: arm64
             os_name: sequoia
-          - runner: macos-14
-            arch: arm64
-            os_name: sonoma
     runs-on: ${{ matrix.platform.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -920,8 +959,18 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install autoconf automake texinfo gnutls librsvg libxml2 \
-            gcc libgccjit pkg-config webp tree-sitter
+          # Retry: on Tier 3 macOS versions some deps build from source and
+          # fetch GitHub compare .diff patches, which are not byte-stable and
+          # occasionally fail checksum verification. Drop cached patches and
+          # try again.
+          for attempt in 1 2 3; do
+            brew install autoconf automake texinfo gnutls librsvg libxml2 \
+              gcc libgccjit pkg-config webp tree-sitter && break
+            [ "$attempt" = 3 ] && exit 1
+            echo "::warning::brew install failed (attempt $attempt), retrying"
+            rm -f "$(brew --cache)"/downloads/*.diff "$(brew --cache)"/downloads/*.patch*
+            sleep 30
+          done
 
       - name: Clone Emacs source
         run: |
@@ -997,10 +1046,12 @@ jobs:
           # - FD_SETSIZE=10000: Increases file descriptor limit (default ~1024) for LSP/eglot
           # - DARWIN_UNLIMITED_SELECT: Removes macOS select() limit
           # Note: ImageMagick excluded to avoid libomp conflicts (issue #890)
+          # Note: no --enable-locallisppath; it replaces the bundle site-lisp,
+          # so site-start.el never loads. The cask postflight adds Homebrew
+          # site-lisp to load-path from site-start.el instead (issue #1016)
           ./configure \
             CFLAGS="-DFD_SETSIZE=10000 -DDARWIN_UNLIMITED_SELECT -I$(brew --prefix gcc)/include -I$(brew --prefix libgccjit)/include" \
             LDFLAGS="-L$GCC_LIB -Wl,-rpath,$GCC_LIB" \
-            --enable-locallisppath=$HOMEBREW_PREFIX/share/emacs/site-lisp \
             --with-ns \
             --with-native-compilation=aot \
             --with-xwidgets \
@@ -1011,6 +1062,12 @@ jobs:
             --with-webp \
             --without-dbus \
             --without-compress-install
+          # Preload the native-comp driver options into the dump, so they
+          # apply with -Q and --no-site-file too (issue #964). Mirrors
+          # Library/EmacsBase.rb#write_site_init.
+          ruby -I../Library -rBuildConfig \
+            -e 'print BuildConfig.site_init_el(ENV.fetch("HOMEBREW_PREFIX"))' \
+            > lisp/site-init.el
           make -j$(sysctl -n hw.ncpu)
           make install
 
@@ -1176,9 +1233,7 @@ jobs:
                 do shell script "EMACSCLIENT_PATH -c -a '' -n " & dropPath
               end try
             end repeat
-            try
-              do shell script "open -a Emacs"
-            end try
+            my activateEmacs()
           end open
 
           -- Handle launch without files (from Spotlight, Dock, or Finder)
@@ -1186,20 +1241,28 @@ jobs:
             try
               do shell script "EMACSCLIENT_PATH -c -a '' -n"
             end try
-            try
-              do shell script "open -a Emacs"
-            end try
+            my activateEmacs()
           end run
 
           -- Handle org-protocol:// URLs (for org-capture, org-roam, etc.)
+          -- -r reuses the current frame and creates one only if the daemon has none
           on open location this_URL
             try
-              do shell script "EMACSCLIENT_PATH -n " & quoted form of this_URL
+              do shell script "EMACSCLIENT_PATH -r -a '' -n " & quoted form of this_URL
             end try
-            try
-              do shell script "open -a Emacs"
-            end try
+            my activateEmacs()
           end open location
+
+          -- Bring the running Emacs to the front. `open -a Emacs` would pick an
+          -- Emacs.app by name and could start a second Emacs next to the daemon.
+          -- The id is kept in a variable so osacompile does not look the app up
+          -- at compile time, when Emacs.app may not be installed yet.
+          on activateEmacs()
+            set emacsId to "org.gnu.Emacs"
+            try
+              tell application id emacsId to activate
+            end try
+          end activateEmacs
           APPLESCRIPT_EOF
 
           # Replace placeholder with actual path
@@ -1341,7 +1404,7 @@ jobs:
           # Every build leg must have uploaded its binary; a release with a
           # missing asset would leave the cask pointing at a dead URL.
           missing=""
-          for target in arm64-14 arm64-15 arm64-26; do
+          for target in arm64-15 arm64-26; do
             if ! ls artifacts/*/emacs-plus-*-"$target".zip >/dev/null 2>&1; then
               missing="$missing $target"
             fi
@@ -1480,7 +1543,7 @@ jobs:
           # Every build leg must have uploaded its binary; a release with a
           # missing asset would leave the cask pointing at a dead URL.
           missing=""
-          for target in arm64-14 arm64-15 arm64-26; do
+          for target in arm64-15 arm64-26; do
             if ! ls artifacts/*/emacs-plus-*-"$target".zip >/dev/null 2>&1; then
               missing="$missing $target"
             fi
@@ -1622,7 +1685,7 @@ jobs:
           # Every build leg must have uploaded its binary; a release with a
           # missing asset would leave the cask pointing at a dead URL.
           missing=""
-          for target in arm64-14 arm64-15 arm64-26; do
+          for target in arm64-15 arm64-26; do
             if ! ls artifacts/*/emacs-plus-*-"$target".zip >/dev/null 2>&1; then
               missing="$missing $target"
             fi

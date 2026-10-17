@@ -73,7 +73,7 @@ class EmacsPlusAT32 < EmacsBase
 
   local_patch "fix-ns-x-colors", sha: "9e5d3e26a8d388d3a000b697d582769645ca93ad597b4113744deba4b89a8b9e"
   local_patch "system-appearance", sha: "53283503db5ed2887e9d733baaaf80f2c810e668e782e988bda5855a0b1ebeb4"
-  local_patch "round-undecorated-frame", sha: "c9430a1ead81e313b3d2877ff6f8044fb29441eecc7cc42000515d7c8ec6380f"
+  local_patch "round-undecorated-frame", sha: "6daed6c192f4fe32c104ff754a7fd461a75094ca95fb377e7bd09450af67fc0e"
   local_patch "ns-win", sha: "4829dfa8c447b714e010457f2da6b217be98bf53d454802c253bb6ae9da41038"
 
   #
@@ -123,6 +123,8 @@ class EmacsPlusAT32 < EmacsBase
     ENV.append "LDFLAGS", "-L#{Utils::Path.formula_opt_lib("sqlite")}"
     ENV.append "LDFLAGS", "-L#{gcc_lib}"
     ENV.append "LDFLAGS", "-Wl,-rpath,#{gcc_lib}"
+    # libgccjit's JIT linker needs GCC runtime libraries during configure and AOT compilation.
+    ENV.prepend_path "LIBRARY_PATH", build_library_path
 
     args <<
       if build.with? "dbus"
@@ -143,6 +145,9 @@ class EmacsPlusAT32 < EmacsBase
 
     # Apply custom patches from build.yml
     apply_custom_patches
+
+    # Preload native-comp driver options into the dump (works with -Q)
+    write_site_init
 
     if (build.with? "cocoa") && (build.without? "x11")
       args << "--with-ns" << "--disable-ns-self-contained"
@@ -260,17 +265,23 @@ class EmacsPlusAT32 < EmacsBase
   def caveats
     <<~EOS
       Emacs.app and Emacs Client.app were installed to:
-        #{prefix}
+        #{opt_prefix}
 
-      For best Spotlight integration, copy the apps to /Applications:
-        cp -r #{prefix}/Emacs.app /Applications/
-        cp -r "#{prefix}/Emacs Client.app" /Applications/
+      Formulas don't install apps into /Applications. If that is what you
+      want, the emacs-plus-app@master cask is the better fit:
+        brew install --cask emacs-plus-app@master
 
-      The `emacs` command always runs this formula's own Emacs.app; copies
-      in /Applications are only used if the original is removed.
+      With this formula you can still put them there yourself:
+      - copy them, and after each upgrade remove the copy of Emacs.app and
+        copy it again:
+          cp -R "#{opt_prefix}/Emacs.app" /Applications/
+          cp -R "#{opt_prefix}/Emacs Client.app" /Applications/
+      - or symlink them; the links follow upgrades, but Spotlight may not
+        show them:
+          ln -s "#{opt_prefix}/Emacs.app" /Applications/
+          ln -s "#{opt_prefix}/Emacs Client.app" /Applications/
 
-      Alternatively, create Finder aliases (less reliable with Spotlight):
-        osascript -e 'tell application "Finder" to make alias file to posix file "#{prefix}/Emacs.app" at posix file "/Applications" with properties {name:"Emacs.app"}'
+      The `emacs` command always runs this formula's own Emacs.app.
 
       Custom icons and patches can be configured via ~/.config/emacs-plus/build.yml
       See: https://github.com/d12frosted/homebrew-emacs-plus/blob/master/community/README.md

@@ -418,6 +418,94 @@ class TestCaskEnv < Minitest::Test
     end
   end
 
+  def test_update_site_start_el_skips_driver_options_when_dump_preloads_them
+    # Builds with site-init.el set the driver options from the dump, which
+    # also covers -Q and --no-site-file; the site-start.el block would only
+    # cost a gcc call on every startup
+    Dir.mktmpdir do |dir|
+      app_path = make_site_start(dir)
+      lisp_dir = "#{app_path}/Contents/Resources/lisp"
+      FileUtils.mkdir_p(lisp_dir)
+      File.write("#{lisp_dir}/site-init.el", BuildConfig.site_init_el("/opt/homebrew"))
+
+      CaskEnv.instance_variable_set(:@config, { "inject_path" => true })
+      CaskEnv.send(:update_site_start_el, app_path)
+
+      content = File.read("#{app_path}/Contents/Resources/site-lisp/site-start.el")
+      refute_includes content, "native-comp-driver-options"
+      # The other blocks are still added
+      assert_includes content, "ns-emacs-plus-injected-path"
+      assert_includes content, ";; Homebrew site-lisp"
+    end
+  end
+
+  def test_update_site_start_el_adds_driver_options_without_preloaded_site_init
+    # Builds from before site-init.el still need the site-start.el block,
+    # and so does a site-init.el that does not set driver options
+    Dir.mktmpdir do |dir|
+      app_path = make_site_start(dir)
+      lisp_dir = "#{app_path}/Contents/Resources/lisp"
+      FileUtils.mkdir_p(lisp_dir)
+      File.write("#{lisp_dir}/site-init.el", ";;; site-init.el\n")
+
+      CaskEnv.instance_variable_set(:@config, { "inject_path" => true })
+      CaskEnv.send(:update_site_start_el, app_path)
+
+      content = File.read("#{app_path}/Contents/Resources/site-lisp/site-start.el")
+      assert_includes content, "native-comp-driver-options"
+    end
+  end
+
+  def test_update_site_start_el_adds_homebrew_site_lisp_to_load_path
+    # Cask builds are self-contained, so Emacs does not search Homebrew's
+    # site-lisp (where e.g. mu installs mu4e) by default. site-start.el
+    # adds it at startup instead of --enable-locallisppath, which replaces
+    # the bundle site-lisp and keeps site-start.el from loading at all
+    Dir.mktmpdir do |dir|
+      app_path = make_site_start(dir)
+
+      Hardware::CPU.mock_arm = true
+      CaskEnv.instance_variable_set(:@config, { "inject_path" => true })
+      CaskEnv.send(:update_site_start_el, app_path)
+
+      content = File.read("#{app_path}/Contents/Resources/site-lisp/site-start.el")
+
+      assert_includes content, '"/opt/homebrew/share/emacs/site-lisp"'
+      assert_includes content, "(add-to-list 'load-path dir)"
+      # Subdirectories are picked up the same way Emacs does at startup
+      assert_includes content, '"subdirs.el"'
+      assert_operator content.index("share/emacs/site-lisp"), :<,
+                      content.index("(provide 'emacs-plus)")
+    end
+  end
+
+  def test_update_site_start_el_adds_homebrew_site_lisp_on_upgrade
+    # A site-start.el that already has the older blocks still gets the
+    # load-path block
+    Dir.mktmpdir do |dir|
+      app_path = make_site_start(dir)
+      CaskEnv.instance_variable_set(:@config, { "inject_path" => true })
+      CaskEnv.send(:update_site_start_el, app_path)
+
+      site_start = "#{app_path}/Contents/Resources/site-lisp/site-start.el"
+      content = File.read(site_start)
+      start = content.index(";; Homebrew site-lisp")
+      finish = content.index("(provide 'emacs-plus)")
+      File.write(site_start, content[0...start] + content[finish..])
+
+      assert_equal true, CaskEnv.send(:update_site_start_el, app_path)
+      assert_includes File.read(site_start), "share/emacs/site-lisp"
+    end
+  end
+
+  def test_cask_builds_keep_default_locallisppath
+    # --enable-locallisppath replaces the default site-lisp search path,
+    # which for a self-contained app is the bundle's site-lisp. With it,
+    # the bundled site-start.el never loads (issue #1016)
+    workflow = File.read(File.expand_path("../.github/workflows/build-app.yml", __dir__))
+    refute_includes workflow, "--enable-locallisppath="
+  end
+
   def test_update_site_start_el_is_idempotent
     Dir.mktmpdir do |dir|
       app_path = "#{dir}/Emacs.app"

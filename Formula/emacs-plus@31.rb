@@ -125,6 +125,8 @@ class EmacsPlusAT31 < EmacsBase
     ENV.append "LDFLAGS", "-L#{Utils::Path.formula_opt_lib("sqlite")}"
     ENV.append "LDFLAGS", "-L#{gcc_lib}"
     ENV.append "LDFLAGS", "-Wl,-rpath,#{gcc_lib}"
+    # libgccjit's JIT linker needs GCC runtime libraries during configure and AOT compilation.
+    ENV.prepend_path "LIBRARY_PATH", build_library_path
 
     args <<
       if build.with? "dbus"
@@ -159,6 +161,9 @@ class EmacsPlusAT31 < EmacsBase
 
     # Apply custom patches from build.yml
     apply_custom_patches
+
+    # Preload native-comp driver options into the dump (works with -Q)
+    write_site_init
 
     if (build.with? "cocoa") && (build.without? "x11")
       args << "--with-ns" << "--disable-ns-self-contained"
@@ -276,17 +281,23 @@ class EmacsPlusAT31 < EmacsBase
   def caveats
     <<~EOS
       Emacs.app and Emacs Client.app were installed to:
-        #{prefix}
+        #{opt_prefix}
 
-      For best Spotlight integration, copy the apps to /Applications:
-        cp -r #{prefix}/Emacs.app /Applications/
-        cp -r "#{prefix}/Emacs Client.app" /Applications/
+      Formulas don't install apps into /Applications. If that is what you
+      want, the emacs-plus-app cask is the better fit:
+        brew install --cask emacs-plus-app
 
-      The `emacs` command always runs this formula's own Emacs.app; copies
-      in /Applications are only used if the original is removed.
+      With this formula you can still put them there yourself:
+      - copy them, and after each upgrade remove the copy of Emacs.app and
+        copy it again:
+          cp -R "#{opt_prefix}/Emacs.app" /Applications/
+          cp -R "#{opt_prefix}/Emacs Client.app" /Applications/
+      - or symlink them; the links follow upgrades, but Spotlight may not
+        show them:
+          ln -s "#{opt_prefix}/Emacs.app" /Applications/
+          ln -s "#{opt_prefix}/Emacs Client.app" /Applications/
 
-      Alternatively, create Finder aliases (less reliable with Spotlight):
-        osascript -e 'tell application "Finder" to make alias file to posix file "#{prefix}/Emacs.app" at posix file "/Applications" with properties {name:"Emacs.app"}'
+      The `emacs` command always runs this formula's own Emacs.app.
 
       Custom icons and patches can be configured via ~/.config/emacs-plus/build.yml
       See: https://github.com/d12frosted/homebrew-emacs-plus/blob/master/community/README.md
