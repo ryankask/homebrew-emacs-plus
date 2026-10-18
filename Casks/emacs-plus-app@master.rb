@@ -1,7 +1,7 @@
 cask "emacs-plus-app@master" do
   # Version format: <emacs-version>-<build-number>
   # Build number corresponds to GitHub Actions run number
-  version "32.0.50-342"
+  version "32.0.50-376"
 
   # Base URL for release assets (lane releases: cask-master-<build>)
   base_url = "https://github.com/d12frosted/homebrew-emacs-plus/releases/download/cask-master-#{version.sub(/^[\d.]+-/, "")}"
@@ -12,14 +12,11 @@ cask "emacs-plus-app@master" do
   # check, which broke tapping (#1005). `depends_on arch:` below is what
   # refuses the install on Intel.
   if MacOS.version >= :tahoe # macOS 26
-    sha256 "a90e3dfbed45f575c4a637c518cf031011db413f4aba86681d40366b57544672"
+    sha256 "7e11a7233564dccce8364264d79bb13f493f2911f1cc8c8ea7844d0bfb839425"
     url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-26.zip"
-  elsif MacOS.version >= :sequoia # macOS 15
-    sha256 "403084c6dbde5a623b7cd9bdb4b31805656a6b5dde8b937c94a5d327a1d5eb28"
+  else # macOS 15 (Sequoia)
+    sha256 "6acbc7b9bcc89f0f6d6a69897102f57ab7b1bee09b922247417a52485b93d258"
     url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-15.zip"
-  else # macOS 14 (Sonoma)
-    sha256 "f8b02f2eb841cde0e2aa0333321fdce41e5cc1d5f8c9c8d4ee356c3966a6c39b"
-    url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-14.zip"
   end
 
   name "Emacs+ (Development)"
@@ -42,9 +39,10 @@ cask "emacs-plus-app@master" do
   # - libgccjit: JIT compilation library
   depends_on formula: "gcc"
   depends_on formula: "libgccjit"
-  # Oldest prebuilt arm64 binary targets macOS 14 (built on the macos-14
-  # runner), so Ventura cannot run it
-  depends_on macos: :sonoma
+  # Oldest prebuilt binary targets macOS 15 (built on the macos-15 runner).
+  # There is no Sonoma build: Homebrew stopped bottling for macOS 14, so
+  # building there meant compiling dependencies like llvm from source
+  depends_on macos: :sequoia
 
   # Install the app
   app "Emacs.app"

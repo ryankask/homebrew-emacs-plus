@@ -13,7 +13,8 @@
 #
 # 3. Emacs Client.app - Recompiles AppleScript with PATH for emacsclient
 #
-# 4. site-start.el - Adds ns-emacs-plus-version and PATH injection code
+# 4. site-start.el - Adds PATH injection, Homebrew site-lisp on load-path and,
+#    for builds that do not preload site-init.el, native-comp driver options
 #
 # LIMITATION: Unlike formula builds, cask postflight runs in Homebrew's
 # controlled environment without access to the user's full PATH. Therefore:
@@ -316,9 +317,7 @@ module CaskEnv
               do shell script "PATH='#{escaped_path}' #{emacsclient} -c -a '' -n " & dropPath
             end try
           end repeat
-          try
-            do shell script "open -a Emacs"
-          end try
+          my activateEmacs()
         end open
 
         -- Handle launch without files (from Spotlight, Dock, or Finder)
@@ -326,20 +325,28 @@ module CaskEnv
           try
             do shell script "PATH='#{escaped_path}' #{emacsclient} -c -a '' -n"
           end try
-          try
-            do shell script "open -a Emacs"
-          end try
+          my activateEmacs()
         end run
 
         -- Handle org-protocol:// URLs (for org-capture, org-roam, etc.)
+        -- -r reuses the current frame and creates one only if the daemon has none
         on open location this_URL
           try
-            do shell script "PATH='#{escaped_path}' #{emacsclient} -n " & quoted form of this_URL
+            do shell script "PATH='#{escaped_path}' #{emacsclient} -r -a '' -n " & quoted form of this_URL
           end try
-          try
-            do shell script "open -a Emacs"
-          end try
+          my activateEmacs()
         end open location
+
+        -- Bring the running Emacs to the front. `open -a Emacs` would pick an
+        -- Emacs.app by name and could start a second Emacs next to the daemon.
+        -- The id is kept in a variable so osacompile does not look the app up
+        -- at compile time, when Emacs.app may not be installed yet.
+        on activateEmacs()
+          set emacsId to "org.gnu.Emacs"
+          try
+            tell application id emacsId to activate
+          end try
+        end activateEmacs
       APPLESCRIPT
 
       # Write and compile the script
@@ -389,7 +396,9 @@ module CaskEnv
     # Update site-start.el with code that must be added at user install
     # time. The CI build creates site-start.el with ns-emacs-plus-version;
     # here we add PATH injection (EMACS_PLUS_PATH is set via LSEnvironment
-    # at install time) and native-comp driver options (issue #964). Each
+    # at install time), native-comp driver options for builds that do not
+    # preload site-init.el (issue #964) and Homebrew site-lisp on
+    # load-path (issues #930, #1016). Each
     # block is added independently so upgrades pick up new blocks even
     # when older ones are already present.
     # Returns true if the file was modified (it lives inside the bundle,
@@ -431,11 +440,20 @@ module CaskEnv
       end
 
       # Native-comp driver options so libgccjit can link .eln files on
-      # terminal launches too (issue #964)
-      unless content.include?("native-comp-driver-options")
+      # terminal launches too (issue #964). Builds that preload
+      # site-init.el already set them from the dump
+      unless content.include?("native-comp-driver-options") || preloads_driver_options?(app_path)
         content = content.sub(
           "(provide 'emacs-plus)",
           "#{BuildConfig.native_comp_driver_options_el(homebrew_prefix).chomp}\n\n(provide 'emacs-plus)"
+        )
+      end
+
+      # Homebrew site-lisp on load-path (issues #930, #1016)
+      unless content.include?(";; Homebrew site-lisp")
+        content = content.sub(
+          "(provide 'emacs-plus)",
+          "#{homebrew_site_lisp_el(homebrew_prefix).chomp}\n\n(provide 'emacs-plus)"
         )
       end
 
@@ -444,6 +462,35 @@ module CaskEnv
       File.write(site_start, content)
       puts "Updated site-start.el"
       true
+    end
+
+    # True if the build preloaded site-init.el with the native-comp driver
+    # options (see BuildConfig.site_init_el). make install copies the file
+    # from the source tree into the bundle's lisp dir, so its presence
+    # tells whether the dumped image sets the options.
+    def preloads_driver_options?(app_path)
+      site_init = "#{app_path}/Contents/Resources/lisp/site-init.el"
+      File.file?(site_init) && File.read(site_init).include?("native-comp-driver-options")
+    end
+
+    # Elisp block that adds Homebrew's site-lisp (where e.g. mu installs
+    # mu4e) to load-path. The cask app is self-contained, so its default
+    # site-lisp search path is the bundle's own site-lisp. Passing
+    # --enable-locallisppath at build time would replace that path rather
+    # than extend it, and then this very file never loads (issue #1016).
+    # A colon-separated list does not help either: the bundle path is
+    # relative and Emacs relocates only single paths (see ns_relocate).
+    def homebrew_site_lisp_el(prefix)
+      <<~ELISP
+        ;; Homebrew site-lisp: packages such as mu install their Elisp here.
+        ;; Mirror what Emacs does for site-lisp dirs at startup: add the
+        ;; directory, then load its subdirs.el if there is one.
+        (let ((dir "#{prefix}/share/emacs/site-lisp"))
+          (when (file-directory-p dir)
+            (add-to-list 'load-path dir)
+            (let ((default-directory dir))
+              (load (expand-file-name "subdirs.el" dir) t t t))))
+      ELISP
     end
 
     # Read one plist key with PlistBuddy; nil when the key is missing.
