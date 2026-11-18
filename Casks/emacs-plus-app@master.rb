@@ -1,7 +1,7 @@
 cask "emacs-plus-app@master" do
   # Version format: <emacs-version>-<build-number>
   # Build number corresponds to GitHub Actions run number
-  version "32.0.50-381"
+  version "32.0.50-411"
 
   # Base URL for release assets (lane releases: cask-master-<build>)
   base_url = "https://github.com/d12frosted/homebrew-emacs-plus/releases/download/cask-master-#{version.sub(/^[\d.]+-/, "")}"
@@ -12,10 +12,10 @@ cask "emacs-plus-app@master" do
   # check, which broke tapping (#1005). `depends_on arch:` below is what
   # refuses the install on Intel.
   if MacOS.version >= :tahoe # macOS 26
-    sha256 "52a7378ee95d827839c3ea672a462398bda71926839445b308f461a326d00d9c"
+    sha256 "24f6c256d72881f42aed8ed85ee189da319831205c21ad5cd30fb8b01381f9a3"
     url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-26.zip"
   else # macOS 15 (Sequoia)
-    sha256 "79a2859659932ea070c1f3de16b851d51b1488ba1da2b2c4f39e1b6076e118c6"
+    sha256 "adef8c8bde25c58c9654422f32eaf71f9ca9debecb8a1c4a02693065a2f1a2a9"
     url "#{base_url}/emacs-plus-#{emacs_ver}-arm64-15.zip"
   end
 
@@ -25,7 +25,7 @@ cask "emacs-plus-app@master" do
 
   # Conflict with other Emacs cask installations
   conflicts_with cask: [
-    "emacs",
+    "emacs-app",
     "emacs-mac",
     "emacs-mac-spacemacs-icon",
     "emacs-plus-app",
@@ -64,9 +64,20 @@ cask "emacs-plus-app@master" do
   # The step runs in Homebrew's sandbox with a scratch HOME; the build.yml
   # locations are declared so the script can still read them, and network
   # access is for icons pulled from a URL.
+  # The tap lives in HOMEBREW_LIBRARY/Taps, which is not under
+  # HOMEBREW_PREFIX when bin/brew links into a separate repository, and
+  # steps have no token for it. So bash reads it from the environment brew
+  # exports, falling back to the prefix (the default layout); Homebrew
+  # expands {{HOMEBREW_PREFIX}} before bash sees the program.
+  # HOMEBREW_REPOSITORY is not used: nix-homebrew points it at a stub
+  # directory and keeps the library in the prefix.
   postflight_steps do
-    run "{{HOMEBREW_PREFIX}}/Library/Taps/d12frosted/homebrew-emacs-plus/scripts/cask-postflight",
-        args:           ["--emacs-app", "{{appdir}}/Emacs.app",
+    run "/bin/bash",
+        args:           ["-c",
+                         'exec "${HOMEBREW_LIBRARY:-{{HOMEBREW_PREFIX}}/Library}/Taps/' \
+                         'd12frosted/homebrew-emacs-plus/scripts/cask-postflight" "$@"',
+                         "cask-postflight",
+                         "--emacs-app", "{{appdir}}/Emacs.app",
                          "--emacs-client-app", "{{appdir}}/Emacs Client.app",
                          "--version", "{{version.major}}",
                          "--homebrew-prefix", "{{HOMEBREW_PREFIX}}"],

@@ -11,6 +11,8 @@
 require 'minitest/autorun'
 require 'tempfile'
 require 'tmpdir'
+require 'fileutils'
+require 'pathname'
 require_relative '../Library/BuildConfig'
 
 class TestBuildConfig < Minitest::Test
@@ -912,11 +914,16 @@ class TestBuildConfig < Minitest::Test
   def test_site_init_el_adds_driver_options_in_emacs
     # Runs the generated file in a real Emacs, when one with native
     # compilation is around. The prefix has no gcc, so only the fixed
-    # library dirs are expected
+    # library dirs are expected. They are compared against what comp.el
+    # sets up without the file, since an emacs-plus Emacs already has its
+    # own site-init.el in the dump
     emacs = ENV.fetch("EMACS", "emacs")
     probe = IO.popen([emacs, "--batch", "-Q", "--eval", "(princ (native-comp-available-p))"],
                      err: File::NULL, &:read) rescue nil
     skip "no Emacs with native compilation" unless probe == "t"
+
+    baseline_script = '(progn (require \'comp) (princ (format "%S" native-comp-driver-options)))'
+    baseline = IO.popen([emacs, "--batch", "-Q", "--eval", baseline_script], err: File::NULL, &:read)
 
     Dir.mktmpdir do |dir|
       site_init = File.join(dir, "site-init.el")
@@ -932,13 +939,67 @@ class TestBuildConfig < Minitest::Test
       unbound, options = out.lines.map(&:strip)
 
       assert_equal "nil", unbound, "nothing should be set before comp.el loads"
-      assert_equal %W[-Wl,-w -L#{dir}/lib/gcc/current
+      assert_equal baseline.scan(/"([^"]*)"/).flatten +
+                   %W[-L#{dir}/lib/gcc/current
                       -L#{dir}/opt/libgccjit/lib/gcc/current -L#{dir}/lib],
                    options.scan(/"([^"]*)"/).flatten
     end
   end
 
+  # ===========================================
+  # Tests for service_environment
+  # ===========================================
+
+  def test_service_environment_passes_injected_path
+    with_app_plist("Add :LSEnvironment:EMACS_PLUS_PATH string '/opt/homebrew/bin:/my dir/bin:/usr/bin'") do |app|
+      assert_equal({ EMACS_PLUS_PATH: "/opt/homebrew/bin:/my dir/bin:/usr/bin" },
+                   BuildConfig.service_environment(app))
+    end
+  end
+
+  def test_service_environment_accepts_pathname
+    with_app_plist("Add :LSEnvironment:EMACS_PLUS_PATH string '/usr/bin'") do |app|
+      assert_equal({ EMACS_PLUS_PATH: "/usr/bin" }, BuildConfig.service_environment(Pathname.new(app)))
+    end
+  end
+
+  # inject_path: false leaves only LIBRARY_PATH in LSEnvironment
+  def test_service_environment_empty_without_injected_path
+    with_app_plist("Add :LSEnvironment:LIBRARY_PATH string '/opt/homebrew/lib'") do |app|
+      assert_equal({}, BuildConfig.service_environment(app))
+    end
+  end
+
+  def test_service_environment_empty_without_ls_environment
+    with_app_plist do |app|
+      assert_equal({}, BuildConfig.service_environment(app))
+    end
+  end
+
+  # Homebrew evaluates the service block for formulas that are not installed too
+  def test_service_environment_empty_when_app_is_missing
+    Dir.mktmpdir do |dir|
+      assert_equal({}, BuildConfig.service_environment(File.join(dir, "Emacs.app")))
+    end
+  end
+
   private
+
+  # Yields an Emacs.app with an Info.plist; each command runs after the
+  # LSEnvironment dict was added.
+  def with_app_plist(*commands)
+    Dir.mktmpdir do |dir|
+      app = File.join(dir, "Emacs.app")
+      FileUtils.mkdir_p(File.join(app, "Contents"))
+      plist = File.join(app, "Contents/Info.plist")
+      setup = ["Add :CFBundleName string Emacs"]
+      setup += ["Add :LSEnvironment dict", *commands] unless commands.empty?
+      setup.each do |command|
+        assert system("/usr/libexec/PlistBuddy", "-c", command, plist, out: File::NULL, err: File::NULL)
+      end
+      yield app
+    end
+  end
 
   # Helper to load config from a specific path using the environment variable
   def load_config_from_path(path)
